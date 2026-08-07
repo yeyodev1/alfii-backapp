@@ -1,17 +1,21 @@
 import mongoose from "mongoose";
+import { env, resolveMongoUri } from "./env";
 
 export async function dbConnect() {
-  const DB_URI = process.env.DB_URI;
-
-  if (!DB_URI) {
-    throw new Error("DB_URI is not defined in environment variables");
-  }
+  const uri = resolveMongoUri();
 
   try {
-    await mongoose.connect(DB_URI);
-    console.log("Connected to MongoDB");
+    await mongoose.connect(uri, {
+      dbName: env.DB_NAME,
+      serverSelectionTimeoutMS: 10000,
+    });
+    console.log(`[mongo] conectado a la base "${env.DB_NAME}"`);
   } catch (error) {
-    console.error("MongoDB connection error:", error);
+    console.error("[mongo] error de conexion:", error);
     process.exit(1);
   }
+}
+
+export async function dbDisconnect() {
+  await mongoose.disconnect();
 }

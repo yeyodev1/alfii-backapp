@@ -3,22 +3,21 @@ import cors from "cors";
 import http from "http";
 import routerApi from "./routes";
 import { globalErrorHandler } from "./middlewares/globalErrorHandler.middleware";
+import { isProduction } from "./config/env";
 
 const whitelist = [
-  "http://localhost:8100",
-  "http://localhost:8080",
   "http://localhost:5173",
   "http://localhost:5174",
+  "http://localhost:8100",
   "http://localhost:8101",
+  "https://alfii.ec",
+  "https://www.alfii.ec",
 ];
 
 const corsOptions: cors.CorsOptions = {
   origin: (origin, callback) => {
-    if (!origin || whitelist.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error("Not allowed by CORS"));
-    }
+    if (!origin || whitelist.includes(origin)) return callback(null, true);
+    callback(new Error("Not allowed by CORS"));
   },
   credentials: true,
 };
@@ -26,14 +25,25 @@ const corsOptions: cors.CorsOptions = {
 export function createApp() {
   const app = express();
 
+  app.set("trust proxy", 1);
+  app.disable("x-powered-by");
+
   app.use(cors(corsOptions));
-  app.use(express.json({ limit: "50mb" }));
+  app.use(express.json({ limit: "2mb" }));
 
   app.get("/", (_req, res) => {
-    res.send("Server is alive");
+    res.json({ service: "alfii", status: "alive" });
+  });
+
+  app.get("/health", (_req, res) => {
+    res.json({ ok: true, env: isProduction ? "production" : "development" });
   });
 
   routerApi(app);
+
+  app.use((_req, res) => {
+    res.status(404).json({ message: "Ruta no encontrada" });
+  });
 
   app.use(globalErrorHandler);
 
