@@ -1,7 +1,9 @@
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import type { Types } from "mongoose";
 import { env } from "../config/env";
+import { sendPasswordChanged, sendPasswordReset } from "./mail/mail.service";
 import { UserModel, IUser } from "../models/user.model";
 import { PowerProfileModel } from "../models/powerProfile.model";
 import { CustomError } from "../errors/customError.error";
@@ -113,6 +115,96 @@ export async function loginUser(email: string, password: string) {
   user.lastActiveAt = new Date();
   await user.save();
 
+  return { user, token: signToken(user) };
+}
+
+// ---------------------------------------------------------------------------
+// Recuperacion y cambio de contrasena
+// ---------------------------------------------------------------------------
+
+const RESET_TTL_MINUTES = 60;
+
+function hashToken(token: string) {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+/**
+ * Solicita el enlace de recuperacion.
+ *
+ * SIEMPRE responde igual exista o no la cuenta. Si dijeramos "ese correo no
+ * existe", cualquiera podria averiguar quien tiene cuenta en Alfii probando
+ * direcciones, y en este producto eso es informacion sensible por si sola.
+ */
+export async function requestPasswordReset(email: string): Promise<void> {
+  const normalized = email.trim().toLowerCase();
+  const user = await UserModel.findOne({ email: normalized, isAnonymous: false });
+  if (!user) return;
+
+  // Token en claro solo para el correo; en base de datos vive su hash.
+  const token = crypto.randomBytes(32).toString("hex");
+  user.passwordResetTokenHash = hashToken(token);
+  user.passwordResetExpiresAt = new Date(Date.now() + RESET_TTL_MINUTES * 60_000);
+  await user.save();
+
+  await sendPasswordReset({
+    to: normalized,
+    name: user.preferredName,
+    token,
+  });
+}
+
+/** Consume el token y fija la contrasena nueva. */
+export async function resetPassword(token: string, newPassword: string) {
+  const user = await UserModel.findOne({
+    passwordResetTokenHash: hashToken(token),
+    passwordResetExpiresAt: { $gt: new Date() },
+  }).select("+passwordResetTokenHash +passwordResetExpiresAt");
+
+  if (!user) {
+    throw new CustomError(
+      "Ese enlace ya no sirve. Pide uno nuevo y revisa tu correo.",
+      400,
+      { reason: "invalid_reset_token" }
+    );
+  }
+
+  user.passwordHash = await bcrypt.hash(newPassword, 12);
+  // El token se quema al usarlo: un enlace de recuperacion reutilizable es una
+  // puerta abierta en el buzon del usuario para siempre.
+  user.passwordResetTokenHash = undefined;
+  user.passwordResetExpiresAt = undefined;
+  await user.save();
+
+  if (user.email) {
+    void sendPasswordChanged({ to: user.email, name: user.preferredName });
+  }
+
+  return { user, token: signToken(user) };
+}
+
+/** Cambio desde dentro de la app, con la contrasena actual como prueba. */
+export async function changePassword(input: {
+  userId: Types.ObjectId;
+  currentPassword: string;
+  newPassword: string;
+}) {
+  const user = await UserModel.findById(input.userId);
+  if (!user || !user.passwordHash) {
+    throw new CustomError("Esta cuenta todavia no tiene contrasena.", 400);
+  }
+
+  const valid = await bcrypt.compare(input.currentPassword, user.passwordHash);
+  if (!valid) throw new CustomError("La contrasena actual no es correcta.", 401);
+
+  user.passwordHash = await bcrypt.hash(input.newPassword, 12);
+  await user.save();
+
+  if (user.email) {
+    void sendPasswordChanged({ to: user.email, name: user.preferredName });
+  }
+
+  // Token nuevo: el anterior sigue siendo valido hasta que caduque, y tras
+  // cambiar la clave el cliente debe quedarse con la credencial mas reciente.
   return { user, token: signToken(user) };
 }
 

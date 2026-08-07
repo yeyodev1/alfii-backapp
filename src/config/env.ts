@@ -66,6 +66,27 @@ const envSchema = z.object({
   /** Vida de la URL firmada que se entrega al cliente. */
   CLOUDINARY_SIGNED_URL_TTL_SECONDS: z.coerce.number().int().positive().default(3600),
 
+  /**
+   * Correo transaccional (Resend).
+   *
+   * Regla dura del producto: los correos NUNCA hablan de las chicas. Ni nombres,
+   * ni analisis, ni capturas. Un correo se reenvia, aparece en notificaciones
+   * del telefono y vive en el servidor del proveedor de mail: es el canal menos
+   * privado que tenemos. Solo cuenta, logros del usuario y contrasena.
+   */
+  RESEND_API_KEY: z.string().default(""),
+  MAIL_FROM: z.string().default("Alfii <team@alfii.ec>"),
+  MAIL_REPLY_TO: z.string().default("team@alfii.ec"),
+  /** Con false los correos se registran en consola y no se envian. */
+  MAIL_ENABLED: z.coerce.boolean().default(false),
+
+  /**
+   * Base para los enlaces de los correos. Cada entorno apunta a su frontend:
+   * si un enlace de recuperacion de produccion llevara a localhost, el usuario
+   * se queda sin poder entrar.
+   */
+  APP_URL: z.string().default("http://localhost:5173"),
+
   SLACK_ERROR_WEBHOOK: z.string().default(""),
 
   LEGAL_CONTACT_PRIVACY: z.string().default("privacidad@alfii.ec"),
@@ -102,6 +123,26 @@ if (env.STORE_SCREENSHOTS) {
     );
     process.exit(1);
   }
+}
+
+if (env.MAIL_ENABLED && !env.RESEND_API_KEY) {
+  console.error("\n[env] MAIL_ENABLED=true pero falta RESEND_API_KEY.\n");
+  process.exit(1);
+}
+
+/**
+ * Un APP_URL mal puesto no rompe nada al arrancar: rompe el enlace que recibe
+ * el usuario cuando ya no puede entrar a su cuenta. Se avisa fuerte.
+ */
+if (isProductionEnv() && env.APP_URL.includes("localhost")) {
+  console.warn(
+    "\n[env] APP_URL apunta a localhost en produccion. Los enlaces de\n" +
+      "      recuperacion de contrasena no funcionaran para nadie.\n"
+  );
+}
+
+function isProductionEnv() {
+  return env.NODE_ENV === "production";
 }
 
 /**

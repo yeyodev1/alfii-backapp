@@ -4,6 +4,8 @@ import {
   AccentColor,
   ARCHETYPES,
   Archetype,
+  MILESTONE_KEYS,
+  MilestoneKey,
   OUTCOMES,
   Outcome,
   RISK_LEVELS,
@@ -98,6 +100,10 @@ export interface ITarget extends Document {
       occurrences: number;
     }[];
   };
+
+  /** Hitos declarados por el usuario. Un hito marcado gana siempre a la
+   *  estimacion del modelo: es un hecho, no una prediccion. */
+  milestones: Record<MilestoneKey, { achieved: boolean; at?: Date }>;
 
   meters: {
     current: { kiss: number; firstDate: number; firstNight: number };
@@ -213,6 +219,27 @@ const targetSchema = new Schema<ITarget>(
         ],
         default: [],
       },
+    },
+
+    // Un subdocumento por hito, generado desde el enum para que anadir un hito
+    // nuevo no obligue a tocar el schema en dos sitios.
+    milestones: {
+      type: new Schema(
+        Object.fromEntries(
+          MILESTONE_KEYS.map((key) => [
+            key,
+            {
+              type: new Schema(
+                { achieved: { type: Boolean, default: false }, at: Date },
+                { _id: false }
+              ),
+              default: () => ({ achieved: false }),
+            },
+          ])
+        ),
+        { _id: false }
+      ),
+      default: () => ({}),
     },
 
     meters: {

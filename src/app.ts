@@ -12,6 +12,14 @@ const whitelist = [
   "http://localhost:8101",
   "https://alfii.ec",
   "https://www.alfii.ec",
+  // Frontend desplegado en Vercel (dominio estable del proyecto).
+  "https://alfii-frontapp.vercel.app",
+  // CORS_ORIGINS permite sumar origenes sin redeploy de codigo: los deploys de
+  // preview de Vercel cambian de URL en cada commit y no se pueden hardcodear.
+  ...(process.env.CORS_ORIGINS ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
 ];
 
 const corsOptions: cors.CorsOptions = {

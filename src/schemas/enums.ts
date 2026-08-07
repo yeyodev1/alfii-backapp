@@ -35,6 +35,36 @@ export const STAGES = [
 ] as const;
 export type Stage = (typeof STAGES)[number];
 
+/**
+ * Hitos de la relacion. El usuario los marca a mano cuando ocurren.
+ *
+ * Los medidores son una PREDICCION del modelo; esto es un HECHO declarado por el
+ * usuario. Son cosas distintas y por eso viven separadas: cuando el usuario
+ * marca un hito, deja de tener sentido que Alfii siga estimando su probabilidad.
+ *
+ * El lenguaje es deliberadamente sobrio. "Primera noche juntos" dice lo mismo
+ * que la alternativa explicita sin convertir el expediente de una persona real
+ * en un marcador de conquistas.
+ */
+export const MILESTONE_KEYS = ["firstDate", "firstKiss", "firstNight", "relationship"] as const;
+export type MilestoneKey = (typeof MILESTONE_KEYS)[number];
+
+export const MILESTONE_LABELS: Record<MilestoneKey, string> = {
+  firstDate: "Primera salida",
+  firstKiss: "Primer beso",
+  firstNight: "Primera noche juntos",
+  relationship: "Relacion",
+};
+
+/** Medidor que queda resuelto al marcar cada hito. `relationship` no tiene
+ *  medidor propio: es un estado, no una probabilidad. */
+export const MILESTONE_METER: Record<MilestoneKey, "kiss" | "firstDate" | "firstNight" | null> = {
+  firstDate: "firstDate",
+  firstKiss: "kiss",
+  firstNight: "firstNight",
+  relationship: null,
+};
+
 export const RISK_LEVELS = ["LIMPIO", "VIGILAR", "ALTO", "ABORTAR"] as const;
 export type RiskLevel = (typeof RISK_LEVELS)[number];
 

@@ -8,9 +8,11 @@ import {
   targetDossier,
   targetSummary,
   deleteTarget,
+  setMilestone,
+  mergeTargets,
 } from "../services/target.service";
 import { listMessages, maybeGreet, streamChat, withTargetLock } from "../services/chat.service";
-import { STAGES } from "../schemas/enums";
+import { MILESTONE_KEYS, STAGES } from "../schemas/enums";
 import { HOW_WE_MET, RELATIONSHIP_GOALS, type IHerProfile } from "../models/target.model";
 
 export const chatBodySchema = z.object({
@@ -37,6 +39,44 @@ export const patchHerProfileSchema = z.object({
   relationshipGoal: z.enum(RELATIONSHIP_GOALS).nullish(),
   notes: z.string().trim().max(500).nullish(),
 });
+
+export const mergeTargetSchema = z.object({
+  fromId: z.string().min(1),
+});
+
+/** Fusiona dos expedientes de la misma chica en uno. */
+export async function merge(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const target = await mergeTargets({
+      userId: req.currentUser!._id,
+      intoId: param(req, "id"),
+      fromId: req.body.fromId,
+    });
+    res.json({ target: targetSummary(target) });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export const patchMilestoneSchema = z.object({
+  key: z.enum(MILESTONE_KEYS),
+  achieved: z.boolean(),
+});
+
+/** Marcar un hito es del usuario, no del modelo: es un hecho declarado. */
+export async function patchMilestone(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const target = await setMilestone({
+      userId: req.currentUser!._id,
+      targetId: param(req, "id"),
+      key: req.body.key,
+      achieved: req.body.achieved,
+    });
+    res.json({ target: targetSummary(target) });
+  } catch (error) {
+    next(error);
+  }
+}
 
 export async function index(req: AuthRequest, res: Response, next: NextFunction) {
   try {

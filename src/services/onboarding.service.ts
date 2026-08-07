@@ -13,6 +13,7 @@ import {
   SKIPPABLE_FIELDS,
   SkippableField,
 } from "../schemas/enums";
+import { checkAchievements } from "./achievements.service";
 import { isPlausibleBirthDate } from "../utils/age";
 import { CustomError } from "../errors/customError.error";
 import { logMetrics } from "../utils/redact";
@@ -380,6 +381,10 @@ async function advance(
   const fresh = (await UserModel.findById(user._id)) ?? user;
 
   const state = currentState(profile);
+
+  // Al cerrar un bloque la carta pudo cambiar de categoria. Se revisa fuera del
+  // camino critico: el usuario no espera por un correo.
+  void checkAchievements(fresh);
 
   // Los chips deben ser los del bloque que ARRANCA, no los que el modelo sugirio
   // para el bloque que acaba de cerrarse. Sin esto el usuario veia el titulo de

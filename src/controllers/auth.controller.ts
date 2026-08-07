@@ -6,6 +6,9 @@ import {
   registerUser,
   loginUser,
   publicUser,
+  requestPasswordReset,
+  resetPassword,
+  changePassword,
 } from "../services/auth.service";
 import { needsReacceptance, legalMeta } from "../services/legal.service";
 import { PowerProfileModel } from "../models/powerProfile.model";
@@ -48,6 +51,60 @@ export async function register(req: AuthRequest, res: Response, next: NextFuncti
       locale: (req.headers["accept-language"] as string)?.split(",")[0],
     });
     res.status(201).json({ token, user: publicUser(user) });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export const forgotPasswordSchema = z.object({
+  email: z.string().trim().toLowerCase().min(3).max(160),
+});
+
+export const resetPasswordSchema = z.object({
+  token: z.string().min(20).max(200),
+  password: z.string().min(8, "La contrasena necesita al menos 8 caracteres").max(128),
+});
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1).max(128),
+  newPassword: z.string().min(8, "La contrasena necesita al menos 8 caracteres").max(128),
+});
+
+/**
+ * Pide el enlace de recuperacion.
+ *
+ * Responde 200 siempre, exista o no la cuenta: contestar distinto convertiria
+ * este endpoint en un buscador de quien usa Alfii.
+ */
+export async function forgotPassword(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    await requestPasswordReset(req.body.email);
+    res.json({
+      ok: true,
+      message: "Si ese correo tiene cuenta, te llega un enlace en un minuto.",
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function resetPasswordHandler(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const { user, token } = await resetPassword(req.body.token, req.body.password);
+    res.json({ token, user: publicUser(user) });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function changePasswordHandler(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const { user, token } = await changePassword({
+      userId: req.currentUser!._id,
+      currentPassword: req.body.currentPassword,
+      newPassword: req.body.newPassword,
+    });
+    res.json({ token, user: publicUser(user) });
   } catch (error) {
     next(error);
   }

@@ -34,6 +34,26 @@ function routerApi(app: Application) {
     auth.register
   );
   router.post("/auth/login", authLimiter, validateBody(auth.loginBodySchema), auth.login);
+  // Recuperacion de contrasena. Con authLimiter: sin el, este endpoint permite
+  // sondear correos y disparar envios masivos desde nuestra cuenta de Resend.
+  router.post(
+    "/auth/forgot-password",
+    authLimiter,
+    validateBody(auth.forgotPasswordSchema),
+    auth.forgotPassword
+  );
+  router.post(
+    "/auth/reset-password",
+    authLimiter,
+    validateBody(auth.resetPasswordSchema),
+    auth.resetPasswordHandler
+  );
+  router.post(
+    "/auth/change-password",
+    ...authed,
+    validateBody(auth.changePasswordSchema),
+    auth.changePasswordHandler
+  );
   router.get("/auth/me", ...authed, auth.me);
 
   // --- onboarding (La Auditoria) ---
@@ -85,6 +105,18 @@ function routerApi(app: Application) {
   router.get("/targets", ...authed, targets.index);
   router.get("/targets/:id", ...authed, targets.show);
   router.patch("/targets/:id", ...authed, validateBody(targets.patchTargetSchema), targets.patch);
+  router.post(
+    "/targets/:id/merge",
+    ...authed,
+    validateBody(targets.mergeTargetSchema),
+    targets.merge
+  );
+  router.patch(
+    "/targets/:id/milestone",
+    ...authed,
+    validateBody(targets.patchMilestoneSchema),
+    targets.patchMilestone
+  );
   router.patch(
     "/targets/:id/her-profile",
     ...authed,

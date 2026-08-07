@@ -1,4 +1,10 @@
-import { ARCHETYPE_LABELS, INCOME_RANGE_LABELS, PERSONALITY_LABELS } from "../schemas/enums";
+import {
+  ARCHETYPE_LABELS,
+  INCOME_RANGE_LABELS,
+  MILESTONE_KEYS,
+  MILESTONE_LABELS,
+  PERSONALITY_LABELS,
+} from "../schemas/enums";
 import type { IUser } from "../models/user.model";
 import type { IPowerProfile } from "../models/powerProfile.model";
 import type { ITarget } from "../models/target.model";
@@ -235,6 +241,24 @@ export function buildDossierLayer(target: ITarget): string {
         `  - ${flag.code}: ${flag.description} (severidad ${flag.severity}, vista ${flag.occurrences} vez/veces)`
       );
     }
+  }
+
+  // Los hitos van ANTES de los medidores y mandan sobre ellos: son hechos que
+  // el usuario declaro, no estimaciones tuyas. Predecir la probabilidad de algo
+  // que ya paso es el error mas caro que puede cometer el agente aqui.
+  const achieved = MILESTONE_KEYS.filter((k) => target.milestones?.[k]?.achieved);
+  if (achieved.length) {
+    lines.push(
+      "HITOS YA CUMPLIDOS (confirmados por el usuario): " +
+        achieved
+          .map((k) => {
+            const at = target.milestones[k]?.at;
+            const when = at ? ` el ${new Date(at).toISOString().slice(0, 10)}` : "";
+            return `${MILESTONE_LABELS[k]}${when}`;
+          })
+          .join(", ") +
+        ". No estimes la probabilidad de estos: ya ocurrieron. Trabaja sobre lo que sigue."
+    );
   }
 
   const m = target.meters.current;

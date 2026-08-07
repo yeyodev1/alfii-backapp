@@ -21,6 +21,9 @@ import { gateScriptsForAnonymous } from "../utils/scriptGating";
 export const confirmTargetSchema = z.object({
   analysisId: z.string().min(1),
   displayName: z.string().trim().min(1).max(60),
+  // Solo se manda cuando el usuario ya resolvio un choque de nombres:
+  // "merge" = es la misma chica, "separate" = es otra que se llama igual.
+  mode: z.enum(["merge", "separate"]).optional(),
 });
 
 export const scriptFeedbackSchema = z.object({
@@ -123,6 +126,7 @@ export async function confirmTarget(req: AuthRequest, res: Response, next: NextF
       userId: req.currentUser!._id,
       analysisId: req.body.analysisId,
       displayName: req.body.displayName,
+      mode: req.body.mode,
     });
     res.status(201).json({ target: targetSummary(target) });
   } catch (error) {

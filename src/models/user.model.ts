@@ -33,6 +33,16 @@ export interface IUser extends Document {
   /** Fase D: omitible con friccion. La edad se deriva, nunca se pide. */
   birthDate?: Date;
 
+  /**
+   * Recuperacion de contrasena. Se guarda el HASH del token, nunca el token:
+   * quien lea la base de datos no debe poder entrar en ninguna cuenta.
+   */
+  passwordResetTokenHash?: string;
+  passwordResetExpiresAt?: Date;
+
+  /** Logros ya notificados por correo, para no repetir el mismo aviso. */
+  notifiedAchievements: string[];
+
   dataSkips: IDataSkip[];
   analysisCount: number;
   lastActiveAt: Date;
@@ -75,6 +85,13 @@ const userSchema = new Schema<IUser>(
 
     preferredName: { type: String, trim: true, maxlength: 40 },
     birthDate: Date,
+
+    // select:false para que el hash del token no salga en consultas normales:
+    // no hay ningun caso en que la app necesite leerlo por accidente.
+    passwordResetTokenHash: { type: String, select: false },
+    passwordResetExpiresAt: { type: Date, select: false },
+
+    notifiedAchievements: { type: [String], default: [] },
 
     dataSkips: { type: [dataSkipSchema], default: [] },
     analysisCount: { type: Number, default: 0 },
