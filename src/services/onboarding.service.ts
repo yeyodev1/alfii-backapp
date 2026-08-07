@@ -79,6 +79,70 @@ function chipsForStep(stepKey: string): string[] {
   return (STEP_CHIP_OPTIONS[stepKey] ?? []).map((o) => o.label);
 }
 
+/**
+ * Texto con el que arranca cada bloque.
+ *
+ * Vive a nivel de modulo y no dentro de onboardingOpener porque `advance` los
+ * necesita: al cerrar un bloque hay que enunciar la pregunta del siguiente en
+ * el mismo turno, o el hilo queda con una pregunta del bloque viejo mientras
+ * las opciones de abajo ya son las del nuevo.
+ */
+const BLOCK_OPENERS: Record<string, string> = {
+  PREFERRED_NAME:
+    "Estas a punto de activar a tu estratega personal: Alfii. Bienvenido a La Auditoria. " +
+    "Antes de seguir, quiero ayudarte bien pero todavia no se como te llamas. Como quieres que me dirija a ti?",
+  BIRTH_DATE:
+    "Un dato mas y te dejo tranquilo. Cuando naciste? Sirve para calibrar el tono: " +
+    "a los 22 y a los 38 no se juega igual, y no quiero darte scripts que suenen prestados.",
+  STATUS:
+    "Ahora si, la parte que importa. Empecemos por lo concreto: a que te dedicas, " +
+    "y que tan bien te va realmente? No me des la version de LinkedIn.",
+  ASSETS:
+    "Ahora lo incomodo. Que tienes tu que la mayoria no? Se honesto, no modesto. " +
+    "Trabajo con activos reales, y si me mientes aqui mis scripts van a fallar en la vida real.",
+  PHILOSOPHY:
+    "Vamos a lo que define tu marco. Que buscas realmente: algo serio, algo casual, " +
+    "o todavia no lo sabes? Esa ultima respuesta tambien es valida.",
+  PERSONALITY:
+    "Por como has hablado durante esta auditoria ya tengo una lectura de ti, " +
+    "pero prefiero que me lo confirmes.",
+  INCOME:
+    "Tema incomodo, lo se, y te digo para que lo quiero: con esto calibro el nivel de los " +
+    "planes que te propongo. Una cita que no puedes sostener te pone en un marco falso, y una " +
+    "que te queda corta desperdicia tu palanca. Dame solo un rango mensual, no la cifra. " +
+    "Y si prefieres saltarlo, se salta y ya.",
+  PHYSIQUE:
+    "Ultimo bloque, y no es vanidad: necesito saber cual es tu palanca real. Si el fisico es " +
+    "un activo fuerte, la estrategia se apoya ahi; si no, la construyo sobre otra cosa. " +
+    "Estatura, peso, y del 1 al 5 como estas hoy. Lo que no quieras decir, lo dejamos.",
+};
+
+/**
+ * Quita la pregunta final de un cierre de bloque forzado.
+ *
+ * Cuando el servidor corta el bloque por limite de turnos, el modelo ya escribio
+ * su respuesta pensando que seguia en el bloque anterior y suele rematar con una
+ * pregunta mas. Esa pregunta ya no tiene donde contestarse: las opciones de
+ * abajo son las del bloque siguiente. Se corta la ultima oracion interrogativa
+ * y el opener del bloque nuevo ocupa su lugar.
+ */
+function dropTrailingQuestion(reply: string): string {
+  const trimmed = reply.trim();
+  if (!trimmed.endsWith("?")) return trimmed;
+
+  // Se busca el cierre de la oracion anterior para saber donde empieza la
+  // pregunta. Sin ningun cierre previo, el texto entero ES la pregunta y no hay
+  // nada que conservar.
+  const lastBreak = Math.max(
+    trimmed.lastIndexOf(". ", trimmed.length - 2),
+    trimmed.lastIndexOf("! ", trimmed.length - 2),
+    trimmed.lastIndexOf("? ", trimmed.length - 2)
+  );
+  if (lastBreak === -1) return "";
+
+  return trimmed.slice(0, lastBreak + 1).trim();
+}
+
 export interface OnboardingState {
   step: number;
   totalSteps: number;
@@ -213,6 +277,13 @@ export async function onboardingTurn(input: {
 
   const turnsInBlock = countTurnsInBlock(profile, step);
 
+  // Un solo booleano para el aviso al modelo y para el cierre del servidor.
+  // Estaban desalineados por uno (`>=` contra `+ 1 >=`): en el turno del corte
+  // el modelo no recibia el aviso, hacia otra pregunta del bloque, y el servidor
+  // cerraba igual. Resultado: Alfii preguntando por activos con las opciones de
+  // filosofia debajo.
+  const limitReached = turnsInBlock + 1 >= MAX_TURNS_PER_BLOCK;
+
   const history = profile.onboarding.transcript
     .slice(-10)
     .map((t) => `${t.role === "user" ? "USUARIO" : "ALFII"}: ${t.content}`)
@@ -226,8 +297,10 @@ export async function onboardingTurn(input: {
         text:
           `Bloque ${step + 1} de ${ONBOARDING_TOTAL_STEPS}. ` +
           `Turnos ya usados en este bloque: ${turnsInBlock}/${MAX_TURNS_PER_BLOCK}.\n` +
-          (turnsInBlock >= MAX_TURNS_PER_BLOCK
-            ? "LIMITE ALCANZADO: cierra el bloque con lo que tengas, marca blockComplete true.\n"
+          (limitReached
+            ? "LIMITE ALCANZADO: este es tu ultimo turno del bloque. Cierra con lo que " +
+              "tengas y marca blockComplete true. NO hagas ninguna pregunta mas de este " +
+              "bloque: el usuario ya no va a poder contestarla.\n"
             : "") +
           `Nombre del usuario: ${input.user.preferredName || "(aun no lo sabes)"}\n\n` +
           `Conversacion:\n${history}`,
@@ -262,11 +335,14 @@ export async function onboardingTurn(input: {
     profile.onboarding.transcript = profile.onboarding.transcript.slice(-60);
   }
 
-  const forceComplete = turnsInBlock + 1 >= MAX_TURNS_PER_BLOCK;
-
-  if (data.blockComplete || forceComplete) {
+  if (data.blockComplete || limitReached) {
     return advance(input.user, profile, {
-      reply: data.reply,
+      // Si el corte lo impuso el servidor y el modelo aun asi remato con una
+      // pregunta, esa pregunta se descarta: pertenece a un bloque que ya cerro.
+      reply:
+        limitReached && !data.blockComplete
+          ? dropTrailingQuestion(data.reply)
+          : data.reply,
       microLessonId: data.microLessonId ?? null,
       suggestedChips: data.suggestedChips,
     });
@@ -391,9 +467,22 @@ async function advance(
   // "ingresos" con las opciones de "personalidad" debajo.
   const canonical = chipsForStep(state.stepKey);
 
+  // El cierre del bloque y la apertura del siguiente van en el MISMO turno: el
+  // usuario no vuelve a hablar entre uno y otro, asi que si el texto no enuncia
+  // la nueva pregunta, las opciones de abajo aparecen sin que nadie las haya
+  // pedido. Se guarda tambien en el transcript para que al recargar la pagina el
+  // hilo se vea igual que en vivo.
+  const opener = completed ? "" : BLOCK_OPENERS[state.stepKey] ?? "";
+  const reply = [payload.reply.trim(), opener].filter(Boolean).join("\n\n");
+
+  if (opener) {
+    profile.onboarding.transcript.push({ role: "alfii", content: opener, at: new Date() });
+    await profile.save();
+  }
+
   return {
     ...state,
-    reply: payload.reply,
+    reply,
     microLessonId: payload.microLessonId,
     suggestedChips: canonical.length ? canonical : payload.suggestedChips,
     chipOptions: STEP_CHIP_OPTIONS[state.stepKey] ?? [],
@@ -422,40 +511,10 @@ export async function onboardingOpener(user: IUser): Promise<OnboardingState> {
   const profile = await ensureProfile(String(user._id));
   const step = Math.min(profile.onboarding.currentStep, ONBOARDING_TOTAL_STEPS - 1);
 
-  const openers: Record<string, string> = {
-    PREFERRED_NAME:
-      "Estas a punto de activar a tu estratega personal: Alfii. Bienvenido a La Auditoria. " +
-      "Antes de seguir, quiero ayudarte bien pero todavia no se como te llamas. Como quieres que me dirija a ti?",
-    BIRTH_DATE:
-      "Un dato mas y te dejo tranquilo. Cuando naciste? Sirve para calibrar el tono: " +
-      "a los 22 y a los 38 no se juega igual, y no quiero darte scripts que suenen prestados.",
-    STATUS:
-      "Ahora si, la parte que importa. Empecemos por lo concreto: a que te dedicas, " +
-      "y que tan bien te va realmente? No me des la version de LinkedIn.",
-    ASSETS:
-      "Ahora lo incomodo. Que tienes tu que la mayoria no? Se honesto, no modesto. " +
-      "Trabajo con activos reales, y si me mientes aqui mis scripts van a fallar en la vida real.",
-    PHILOSOPHY:
-      "Vamos a lo que define tu marco. Que buscas realmente: algo serio, algo casual, " +
-      "o todavia no lo sabes? Esa ultima respuesta tambien es valida.",
-    PERSONALITY:
-      "Por como has hablado durante esta auditoria ya tengo una lectura de ti, " +
-      "pero prefiero que me lo confirmes.",
-    INCOME:
-      "Tema incomodo, lo se, y te digo para que lo quiero: con esto calibro el nivel de los " +
-      "planes que te propongo. Una cita que no puedes sostener te pone en un marco falso, y una " +
-      "que te queda corta desperdicia tu palanca. Dame solo un rango mensual, no la cifra. " +
-      "Y si prefieres saltarlo, se salta y ya.",
-    PHYSIQUE:
-      "Ultimo bloque, y no es vanidad: necesito saber cual es tu palanca real. Si el fisico es " +
-      "un activo fuerte, la estrategia se apoya ahi; si no, la construyo sobre otra cosa. " +
-      "Estatura, peso, y del 1 al 5 como estas hoy. Lo que no quieras decir, lo dejamos.",
-  };
-
   if (profile.onboarding.transcript.length === 0) {
     profile.onboarding.transcript.push({
       role: "alfii",
-      content: openers[ONBOARDING_STEPS[step]],
+      content: BLOCK_OPENERS[ONBOARDING_STEPS[step]],
       at: new Date(),
     });
     await profile.save();
@@ -480,7 +539,7 @@ export async function onboardingOpener(user: IUser): Promise<OnboardingState> {
     ...currentState(profile),
     // Si ya hay conversacion previa no se repite el opener: seria Alfii
     // saludando otra vez a mitad de una charla que ya venia avanzada.
-    reply: history.length ? "" : openers[stepKey],
+    reply: history.length ? "" : BLOCK_OPENERS[stepKey],
     history,
     // Retomar significa que el usuario YA hablo. El opener tambien vive en el
     // transcript, asi que mirar solo su longitud daba "retomado" en la primera
