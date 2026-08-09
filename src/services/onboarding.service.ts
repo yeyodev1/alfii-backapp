@@ -80,6 +80,37 @@ function chipsForStep(stepKey: string): string[] {
 }
 
 /**
+ * Filtra las opciones improvisadas por el modelo antes de mandarlas a pantalla.
+ *
+ * PORQUE: el modelo se cuela y devuelve el identificador interno del enum
+ * (CABALLERO_CLASICO, MENOS_500) como etiqueta. En pantalla eso es un boton que
+ * el usuario no entiende. Se descartan esas y se corta a 6, que es lo que cabe
+ * comodo en el modal sin que haya que scrollear para verlas todas.
+ */
+const ENUM_LOOKING = /^[A-Z0-9]+(_[A-Z0-9]+)+$/;
+
+function sanitizeChipOptions(
+  options: { label: string; hint: string }[]
+): { label: string; hint: string }[] {
+  const seen = new Set<string>();
+  const clean: { label: string; hint: string }[] = [];
+
+  for (const opt of options) {
+    const label = String(opt.label ?? "").trim();
+    if (!label || ENUM_LOOKING.test(label)) continue;
+
+    const key = label.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    clean.push({ label, hint: String(opt.hint ?? "").trim() });
+    if (clean.length === 6) break;
+  }
+
+  return clean;
+}
+
+/**
  * Texto con el que arranca cada bloque.
  *
  * Vive a nivel de modulo y no dentro de onboardingOpener porque `advance` los
@@ -118,6 +149,112 @@ const BLOCK_OPENERS: Record<string, string> = {
 };
 
 /**
+ * Todo lo que Alfii ya sabe del usuario, en texto plano para el prompt.
+ *
+ * PORQUE existe: al modelo solo se le mandaban las ultimas 10 lineas del
+ * transcript. Con 8 bloques de hasta 3 turnos, lo que el usuario conto en el
+ * bloque 3 ya se habia salido de esa ventana para cuando llega al 7. El
+ * resultado es un onboarding que pregunta como si fuera la primera vez: no
+ * puede conectar el bloque de personalidad con los activos que le acaban de
+ * dar, ni las lineas rojas con lo que dijo que busca. Con esto Alfii arrastra
+ * la Matriz completa en cada turno y puede referirse a lo que ya le contaron,
+ * que es lo unico que hace que la conversacion se sienta viva y no un
+ * formulario troceado.
+ */
+function matrixBrief(user: IUser, profile: IPowerProfile): string {
+  const lines: string[] = [];
+
+  if (user.preferredName) lines.push(`- Le dices ${user.preferredName}.`);
+
+  if (user.birthDate) {
+    const years = Math.floor(
+      (Date.now() - new Date(user.birthDate).getTime()) / (365.25 * 24 * 3600 * 1000)
+    );
+    if (years > 0 && years < 120) lines.push(`- Tiene ${years} anios.`);
+  }
+
+  const status = profile.status ?? {};
+  if (status.profession) {
+    const level = status.successLevel ? `, se puntua ${status.successLevel}/5 en como le va` : "";
+    lines.push(`- Se dedica a: ${status.profession}${level}.`);
+  }
+  if (status.socioeconomic) lines.push(`- Contexto socioeconomico: ${status.socioeconomic}.`);
+
+  if (profile.attractionAssets?.length) {
+    const assets = profile.attractionAssets
+      .map((a) => `${a.asset} (${a.selfRating}/5)`)
+      .join(", ");
+    lines.push(`- Dice que sus activos son: ${assets}.`);
+  }
+
+  const philosophy = profile.philosophy ?? { redLines: [] };
+  if (philosophy.seeking) lines.push(`- Busca: ${philosophy.seeking}.`);
+  if (philosophy.redLines?.length) {
+    lines.push(`- Sus lineas rojas: ${philosophy.redLines.join(", ")}.`);
+  }
+  if (philosophy.financeStance) lines.push(`- En las citas: ${philosophy.financeStance}.`);
+
+  if (profile.personalityStyle) lines.push(`- Estilo confirmado: ${profile.personalityStyle}.`);
+  if (profile.income?.monthlyRange) lines.push(`- Rango de ingreso: ${profile.income.monthlyRange}.`);
+
+  const physique = profile.physique ?? {};
+  if (physique.heightCm || physique.buildSelfRating) {
+    const parts = [
+      physique.heightCm ? `${physique.heightCm} cm` : null,
+      physique.weightKg ? `${physique.weightKg} kg` : null,
+      physique.buildSelfRating ? `se ve ${physique.buildSelfRating}/5` : null,
+    ].filter(Boolean);
+    lines.push(`- Fisico: ${parts.join(", ")}.`);
+  }
+
+  lines.push(`- Marco actual: ${profile.frameScore}/100.`);
+
+  return lines.join("\n");
+}
+
+/**
+ * La nota de continuidad al ABRIR un bloque.
+ *
+ * PORQUE no la escribe el modelo: la contextNote que devuelve pertenece al
+ * bloque que acaba de cerrar, y pintarla junto a la pregunta del bloque nuevo
+ * seria el mismo desfase que ya rompio el flujo una vez. Esta se arma con lo que
+ * el usuario dijo, citandolo, para que el salto entre bloques no se lea como
+ * "siguiente pagina del formulario" sino como alguien que sigue el hilo.
+ * Vacia cuando todavia no hay nada que citar: mejor sin nota que con una frase
+ * de relleno.
+ */
+function openerNote(user: IUser, profile: IPowerProfile, stepKey: string): string {
+  const name = user.preferredName;
+  const profession = profile.status?.profession;
+  // El activo que el usuario mejor se puntua: es el que el reconoce como suyo.
+  const topAsset = [...(profile.attractionAssets ?? [])].sort(
+    (a, b) => (b.selfRating ?? 0) - (a.selfRating ?? 0)
+  )[0]?.asset;
+  const seeking = profile.philosophy?.seeking;
+  const redLines = profile.philosophy?.redLines ?? [];
+
+  switch (stepKey) {
+    case "BIRTH_DATE":
+      return name ? `Encantado, ${name}. Vamos con lo siguiente.` : "";
+    case "STATUS":
+      return name ? `${name}, ahora lo que de verdad me sirve.` : "";
+    case "ASSETS":
+      return profession ? `Ya se que te dedicas a ${profession}. Vamos a lo tuyo.` : "";
+    case "PHILOSOPHY":
+      return topAsset ? `Tu activo mas fuerte es ${topAsset}. Ahora el marco.` : "";
+    case "PERSONALITY":
+      if (redLines.length) return `Con tus lineas rojas claras, te leo el estilo.`;
+      return seeking ? `Buscas ${seeking}. Esto define como lo pides.` : "";
+    case "INCOME":
+      return profession ? `Por lo de ${profession} me hago una idea, pero dimelo tu.` : "";
+    case "PHYSIQUE":
+      return topAsset ? `Tu palanca hoy es ${topAsset}. Falta medir esta.` : "";
+    default:
+      return "";
+  }
+}
+
+/**
  * Quita la pregunta final de un cierre de bloque forzado.
  *
  * Cuando el servidor corta el bloque por limite de turnos, el modelo ya escribio
@@ -154,6 +291,10 @@ export interface OnboardingState {
   /** Mismas opciones que suggestedChips pero con su explicacion, para que el
    *  usuario sepa que esta eligiendo. */
   chipOptions?: { label: string; hint: string }[];
+  /** La frase que conecta esta pregunta con algo que el usuario ya dijo. Se
+   *  pinta junto a la pregunta, no dentro del hilo, para que siga visible
+   *  mientras elige. */
+  contextNote?: string;
   /** Conversacion previa, para rehidratar el hilo al recargar la pagina. */
   history?: { role: "user" | "alfii"; content: string }[];
   resumed?: boolean;
@@ -302,8 +443,9 @@ export async function onboardingTurn(input: {
               "tengas y marca blockComplete true. NO hagas ninguna pregunta mas de este " +
               "bloque: el usuario ya no va a poder contestarla.\n"
             : "") +
-          `Nombre del usuario: ${input.user.preferredName || "(aun no lo sabes)"}\n\n` +
-          `Conversacion:\n${history}`,
+          `LO QUE YA SABES DE EL (usalo, no lo repreguntes):\n` +
+          `${matrixBrief(input.user, profile) || "- Todavia nada, es el primer bloque."}\n\n` +
+          `Conversacion reciente:\n${history}`,
       },
     ],
     jsonSchema: onboardingResponseSchema,
@@ -344,23 +486,32 @@ export async function onboardingTurn(input: {
           ? dropTrailingQuestion(data.reply)
           : data.reply,
       microLessonId: data.microLessonId ?? null,
-      suggestedChips: data.suggestedChips,
+      suggestedChips: data.chipOptions.map((o) => o.label),
     });
   }
 
   await profile.save();
 
-  // Dentro del mismo bloque manda el catalogo canonico si existe: las sugerencias
-  // improvisadas por el modelo llegaban con los valores del enum en crudo.
+  // Dentro del bloque mandan las opciones del MODELO, no el catalogo canonico.
+  //
+  // El catalogo esta atado al bloque; varios bloques encadenan sub-preguntas.
+  // PHILOSOPHY pregunta primero que buscas y despues cuales son tus lineas
+  // rojas: con el catalogo fijo, el usuario veia "Algo serio / Algo casual"
+  // debajo de una pregunta sobre lineas rojas, tocaba una, y Alfii le respondia
+  // que no era eso. El modelo es el unico que sabe que acaba de preguntar.
+  // El canonico queda de red: si el modelo no manda nada utilizable, al menos
+  // hay opciones del bloque en vez de dejar al usuario solo con el teclado.
   const state = currentState(profile);
-  const canonical = chipsForStep(state.stepKey);
+  const modelOptions = sanitizeChipOptions(data.chipOptions);
+  const options = modelOptions.length ? modelOptions : STEP_CHIP_OPTIONS[state.stepKey] ?? [];
 
   return {
     ...state,
     reply: data.reply,
     microLessonId: data.microLessonId ?? null,
-    suggestedChips: canonical.length ? canonical : data.suggestedChips,
-    chipOptions: STEP_CHIP_OPTIONS[state.stepKey] ?? [],
+    suggestedChips: options.map((o) => o.label),
+    chipOptions: options,
+    contextNote: data.contextNote,
   };
 }
 
@@ -486,6 +637,7 @@ async function advance(
     microLessonId: payload.microLessonId,
     suggestedChips: canonical.length ? canonical : payload.suggestedChips,
     chipOptions: STEP_CHIP_OPTIONS[state.stepKey] ?? [],
+    contextNote: completed ? "" : openerNote(fresh, profile, state.stepKey),
     identityMatrix: completed ? buildIdentityMatrix(fresh, profile) : null,
   };
 }
@@ -501,6 +653,7 @@ function currentState(profile: IPowerProfile) {
     reply: "",
     suggestedChips: [] as string[],
     chipOptions: [] as { label: string; hint: string }[],
+    contextNote: "",
     microLessonId: null as string | null,
     identityMatrix: null as ReturnType<typeof buildIdentityMatrix> | null,
   };
@@ -547,6 +700,9 @@ export async function onboardingOpener(user: IUser): Promise<OnboardingState> {
     resumed: history.some((m) => m.role === "user"),
     suggestedChips: chipsForStep(stepKey),
     chipOptions: STEP_CHIP_OPTIONS[stepKey] ?? [],
+    // Al retomar tras cerrar la pestania, la nota es la prueba de que no se
+    // perdio nada: Alfii vuelve citando lo que el usuario ya le habia contado.
+    contextNote: openerNote(user, profile, stepKey),
   };
 }
 

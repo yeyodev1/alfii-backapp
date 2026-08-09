@@ -27,7 +27,36 @@ export const onboardingReplySchema = z.object({
   blockComplete: z.boolean(),
   framePenalty: z.number().int().min(0).max(15).catch(0).default(0),
   microLessonId: z.string().max(40).nullish().catch(null),
-  suggestedChips: z.array(z.string().max(40)).max(8).catch([]).default([]),
+  /**
+   * La frase que demuestra que Alfii escucho.
+   *
+   * PORQUE existe como campo aparte y no dentro de `reply`: el frontend la pinta
+   * fija junto a la pregunta, donde el usuario la ve mientras elige. Dentro del
+   * texto del chat se pierde en cuanto entra el mensaje siguiente, y es
+   * justamente lo que hace que la plataforma se sienta viva y no un formulario
+   * que va soltando preguntas sueltas.
+   */
+  contextNote: z.string().max(140).catch("").default(""),
+
+  /**
+   * Opciones tocables PARA LA PREGUNTA QUE ACABAS DE HACER.
+   *
+   * PORQUE llevan hint y las manda el modelo: el catalogo canonico esta atado al
+   * bloque, no al turno, y varios bloques encadenan sub-preguntas. En PHILOSOPHY
+   * el usuario veia "Algo serio / Algo casual" mientras Alfii le preguntaba por
+   * sus lineas rojas; tocaba una y Alfii le respondia que no era eso. El modelo
+   * es el unico que sabe que pregunto en este turno concreto.
+   */
+  chipOptions: z
+    .array(
+      z.object({
+        label: z.string().min(1).max(40),
+        hint: z.string().max(90).catch(""),
+      })
+    )
+    .max(8)
+    .catch([])
+    .default([]),
   extracted: z
     .object({
       preferredName: z.string().max(40).nullish().catch(null),
@@ -87,10 +116,34 @@ export const onboardingResponseSchema = {
       description:
         "Solo cuando blockComplete es true. Uno de: marco, activos-reales, lineas-rojas, timing",
     },
-    suggestedChips: {
+    contextNote: {
+      type: "string",
+      description:
+        "Una frase corta (max 140 caracteres) que conecte esta pregunta con algo CONCRETO que " +
+        "el usuario ya te dijo, citandolo. Ejemplos: 'Dijiste que tu fuerte es la presencia, " +
+        "asi que esto te va a encajar' o 'Buscas algo serio: entonces esto pesa mas de lo " +
+        "normal'. Nunca generica ('para conocerte mejor'). Cadena vacia solo si todavia no " +
+        "sabes nada de el.",
+    },
+    chipOptions: {
       type: "array",
-      description: "Respuestas tocables sugeridas para bajar la friccion. Maximo 6, cortas.",
-      items: { type: "string" },
+      description:
+        "Entre 3 y 6 respuestas tocables para LA PREGUNTA QUE ACABAS DE HACER EN ESTE TURNO, " +
+        "no para el bloque en general. Si en tu reply preguntaste por lineas rojas, las opciones " +
+        "son lineas rojas. Cada una: label corta en castellano natural (jamas el identificador " +
+        "interno tipo CABALLERO_CLASICO o MENOS_500) y hint de una linea que explique que implica " +
+        "elegirla. Array vacio si la pregunta es abierta y no admite opciones cerradas.",
+      items: {
+        type: "object",
+        properties: {
+          label: { type: "string", description: "Texto del boton. Corto, en castellano natural." },
+          hint: {
+            type: "string",
+            description: "Una linea explicando que significa elegir esta opcion.",
+          },
+        },
+        required: ["label", "hint"],
+      },
     },
     extracted: {
       type: "object",
