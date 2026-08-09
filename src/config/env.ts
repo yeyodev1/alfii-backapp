@@ -19,7 +19,18 @@ const envSchema = z.object({
   GEMINI_API_KEY: z.string().min(1, "GEMINI_API_KEY es obligatoria"),
   GEMINI_BILLING_CONFIRMED: z.coerce.boolean().default(true),
   GEMINI_MODEL_VISION: z.string().default("gemini-2.5-flash"),
-  GEMINI_MODEL_CHAT: z.string().default("gemini-2.5-flash"),
+  /**
+   * Conversacion: el modelo mas barato del catalogo de Gemini.
+   *
+   * Precios por 1M tokens (marzo 2026, ai.google.dev/gemini-api/docs/pricing):
+   *   gemini-2.5-flash-lite  $0.10 in / $0.40 out   <- este
+   *   gemini-2.5-flash       $0.30 in / $2.50 out
+   *   gemini-3-flash-preview $0.50 in / $3.00 out
+   *   gemini-3.6-flash       $1.50 in / $7.50 out
+   * Conversar sale 6x mas barato en salida sin cambiar nada mas: el turno de
+   * chat no necesita el modelo que lee subtexto de una captura.
+   */
+  GEMINI_MODEL_CHAT: z.string().default("gemini-2.5-flash-lite"),
   GEMINI_MODEL_ANALYSIS: z.string().default("gemini-3.6-flash"),
 
   /**
@@ -36,13 +47,26 @@ const envSchema = z.object({
    * modelo puede ser el mas rapido conversando y el peor produciendo el JSON de
    * los 6 bloques. Una sola cadena global obliga a elegir el peor compromiso.
    */
-  AI_CHAIN_CHAT: z.string().default(""),
+  /**
+   * Conversar arranca por DeepSeek: con el system prompt cacheado la entrada
+   * cuesta $0.0028/1M frente a los $0.10 de Gemini Flash-Lite. Gemini y OpenAI
+   * quedan detras como respaldo, que es justo para lo que existe la cadena.
+   */
+  AI_CHAIN_CHAT: z.string().default("deepseek,gemini,openai"),
   AI_CHAIN_ANALYSIS: z.string().default(""),
   AI_CHAIN_VISION: z.string().default(""),
 
   OPENAI_API_KEY: z.string().default(""),
   OPENAI_MODEL_VISION: z.string().default("gpt-5.6-terra"),
-  OPENAI_MODEL_CHAT: z.string().default("gpt-5.4-mini"),
+  /**
+   * Conversacion: el mas barato de OpenAI (platform.openai.com/docs/pricing).
+   *   gpt-5.6-luna  $0.20 in / $0.02 cache / $1.20 out   <- este
+   *   gpt-5.4-nano  $0.20 in / $0.02 cache / $1.25 out
+   *   gpt-5.4-mini  $0.75 in / $0.075 cache / $4.50 out
+   * OpenAI solo entra cuando Gemini falla, pero cuando entra cobraba 3.75x de
+   * mas en salida sin ninguna razon para un turno de chat.
+   */
+  OPENAI_MODEL_CHAT: z.string().default("gpt-5.6-luna"),
   OPENAI_MODEL_ANALYSIS: z.string().default("gpt-5.6-terra"),
 
   DEEPSEEK_API_KEY: z.string().default(""),
@@ -50,6 +74,19 @@ const envSchema = z.object({
   /** Razonamiento interno. Apagado por defecto: consume del mismo presupuesto
    *  que max_tokens y vaciaba las respuestas cortas. */
   DEEPSEEK_THINKING: z.coerce.boolean().default(false),
+  /**
+   * Conversacion: v4-flash, el mas barato de DeepSeek y el unico con Responses
+   * API (api-docs.deepseek.com/quick_start/pricing).
+   *   deepseek-v4-flash  $0.14 in miss / $0.0028 in hit / $0.28 out   <- este
+   *   deepseek-v4-pro    $0.435 in miss / $0.003625 in hit / $0.87 out
+   *
+   * El precio de cache-hit es lo que lo hace ganar aqui: 50x mas barato que el
+   * miss. El system prompt de Alfii se repite identico en cada turno, asi que a
+   * partir del segundo mensaje casi toda la entrada entra a $0.0028.
+   *
+   * AVISO de la propia doc: DeepSeek anuncia una subida "significativa" de
+   * precios proxima. Cuando llegue, revisar esta eleccion.
+   */
   DEEPSEEK_MODEL_CHAT: z.string().default("deepseek-v4-flash"),
   DEEPSEEK_MODEL_ANALYSIS: z.string().default("deepseek-v4-pro"),
 

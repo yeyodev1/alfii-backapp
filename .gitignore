@@ -4,3 +4,6 @@ dist
 uploads
 
 .vercel
+
+# Copias de seguridad del .env: mismo contenido, mismos secretos.
+.env.bak*
