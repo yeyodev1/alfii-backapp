@@ -34,6 +34,16 @@ export interface IUser extends Document {
   birthDate?: Date;
 
   /**
+   * Desde donde habla. La pista inicial se deduce de la IP de la peticion
+   * (headers de Vercel/Cloudflare) y queda con confirmed=false; pasa a true
+   * solo cuando el propio usuario la confirma o corrige en conversacion.
+   */
+  location?: { country?: string; city?: string; confirmed: boolean };
+
+  /** Con que voz le habla Alfii (HARVEY, HITCH, BOND, BARNEY, STARK). */
+  alfiiPersona?: string;
+
+  /**
    * Recuperacion de contrasena. Se guarda el HASH del token, nunca el token:
    * quien lea la base de datos no debe poder entrar en ninguna cuenta.
    */
@@ -47,6 +57,12 @@ export interface IUser extends Document {
   analysisCount: number;
   lastActiveAt: Date;
   plan: "free" | "pro";
+  /** Acceso pro sin pagar, otorgado por el admin. Su gasto se registra igual. */
+  isVip: boolean;
+  /** Acceso al portal /admin otorgado desde el portal. Los correos de
+   *  ADMIN_EMAILS son admins SIEMPRE, con o sin este flag: el env es el
+   *  respaldo que garantiza que nadie se bloquea a si mismo. */
+  isAdmin: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -86,6 +102,20 @@ const userSchema = new Schema<IUser>(
     preferredName: { type: String, trim: true, maxlength: 40 },
     birthDate: Date,
 
+    alfiiPersona: { type: String, trim: true, maxlength: 20 },
+
+    location: {
+      type: new Schema(
+        {
+          country: { type: String, trim: true, maxlength: 60 },
+          city: { type: String, trim: true, maxlength: 80 },
+          confirmed: { type: Boolean, default: false },
+        },
+        { _id: false }
+      ),
+      required: false,
+    },
+
     // select:false para que el hash del token no salga en consultas normales:
     // no hay ningun caso en que la app necesite leerlo por accidente.
     passwordResetTokenHash: { type: String, select: false },
@@ -97,6 +127,8 @@ const userSchema = new Schema<IUser>(
     analysisCount: { type: Number, default: 0 },
     lastActiveAt: { type: Date, default: Date.now },
     plan: { type: String, enum: ["free", "pro"], default: "free" },
+    isVip: { type: Boolean, default: false },
+    isAdmin: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
