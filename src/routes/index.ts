@@ -2,7 +2,7 @@ import express, { Application } from "express";
 import { authMiddleware } from "../middlewares/auth.middleware";
 import { loadUser } from "../middlewares/optionalAuth.middleware";
 import { validateBody } from "../middlewares/validate.middleware";
-import { uploadScreenshot } from "../middlewares/upload.middleware";
+import { uploadScreenshot, uploadTextExport } from "../middlewares/upload.middleware";
 import { analysisLimiter, chatLimiter, authLimiter } from "../middlewares/rateLimit.middleware";
 
 import * as auth from "../controllers/auth.controller";
@@ -11,6 +11,8 @@ import * as targets from "../controllers/target.controller";
 import * as onboarding from "../controllers/onboarding.controller";
 import * as card from "../controllers/card.controller";
 import * as legal from "../controllers/legal.controller";
+import * as admin from "../controllers/admin.controller";
+import { adminOnly } from "../middlewares/admin.middleware";
 
 function routerApi(app: Application) {
   const router = express.Router();
@@ -73,6 +75,12 @@ function routerApi(app: Application) {
 
   // --- perfil ---
   router.get("/profile", ...authed, onboarding.profile);
+  router.patch(
+    "/me/persona",
+    ...authed,
+    validateBody(onboarding.personaSchema),
+    onboarding.setPersona
+  );
   router.get("/profile/completeness", ...authed, onboarding.completeness);
   // La carta de stats. El path es /me/card y no /profile/card porque es el que
   // ya consume el cliente: cambiarlo aqui romperia el frontend sin ganar nada.
@@ -91,6 +99,15 @@ function routerApi(app: Application) {
     ...authed,
     validateBody(analysis.confirmTargetSchema),
     analysis.confirmTarget
+  );
+  // Import de conversacion completa: preview sin LLM, analisis con.
+  router.post("/import/preview", ...authed, uploadTextExport, analysis.previewImport);
+  router.post(
+    "/analyze/first/text",
+    ...authed,
+    analysisLimiter,
+    uploadTextExport,
+    analysis.analyzeFirstText
   );
   router.get("/analyses/:id", ...authed, analysis.getAnalysis);
   router.post("/analyses/:id/recalibrate", ...authed, analysisLimiter, analysis.recalibrate);
@@ -140,6 +157,41 @@ function routerApi(app: Application) {
     uploadScreenshot,
     analysis.analyzeForTarget
   );
+  router.post(
+    "/targets/:id/analyze/text",
+    ...authed,
+    analysisLimiter,
+    uploadTextExport,
+    analysis.analyzeTextForTarget
+  );
+
+  // --- administracion: gasto de IA global y por usuario ---
+  router.get("/admin/overview", ...authed, adminOnly, admin.overview);
+  router.get("/admin/users", ...authed, adminOnly, admin.users);
+  router.get("/admin/users/:id", ...authed, adminOnly, admin.userDetail);
+  router.patch(
+    "/admin/users/:id/vip",
+    ...authed,
+    adminOnly,
+    validateBody(admin.patchVipSchema),
+    admin.patchVip
+  );
+  router.patch(
+    "/admin/users/:id/admin",
+    ...authed,
+    adminOnly,
+    validateBody(admin.patchAdminSchema),
+    admin.patchAdmin
+  );
+  router.get("/admin/models", ...authed, adminOnly, admin.models);
+  router.patch(
+    "/admin/models",
+    ...authed,
+    adminOnly,
+    validateBody(admin.patchModelSchema),
+    admin.patchModel
+  );
+  router.get("/admin/providers", ...authed, adminOnly, admin.providers);
 
   // --- privacidad: derechos implementados en la app, no un correo a atender ---
   router.get("/privacy/export", ...authed, legal.exportData);
