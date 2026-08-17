@@ -1,4 +1,4 @@
-import { genai, MODELS, SAFETY_SETTINGS } from "../gemini.client";
+import { genai, geminiModelFor, SAFETY_SETTINGS } from "../gemini.client";
 import { env } from "../../../config/env";
 import {
   ProviderError,
@@ -34,7 +34,7 @@ export const geminiProvider: AiProvider = {
   },
 
   modelFor(task: AiTask): string {
-    return MODELS[task];
+    return geminiModelFor(task);
   },
 
   async completeJson(call: JsonCall): Promise<RawCompletion> {
