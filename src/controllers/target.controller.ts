@@ -36,6 +36,14 @@ export const patchHerProfileSchema = z.object({
   knownSinceMonths: z.number().int().min(0).max(1200).nullish(),
   herAge: z.number().int().min(18).max(99).nullish(),
   herOccupation: z.string().trim().max(80).nullish(),
+  // El handle llega con o sin @ y en cualquier case; se normaliza aqui para
+  // que el modelo y la URL de perfil trabajen siempre con la misma forma.
+  instagram: z
+    .string()
+    .trim()
+    .transform((v) => v.replace(/^@+/, "").toLowerCase())
+    .pipe(z.string().max(30).regex(/^[a-z0-9._]*$/))
+    .nullish(),
   relationshipGoal: z.enum(RELATIONSHIP_GOALS).nullish(),
   notes: z.string().trim().max(500).nullish(),
 });
