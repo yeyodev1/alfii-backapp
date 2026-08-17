@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ARCHETYPES, RISK_LEVELS, SCRIPT_STYLES, STAGES } from "./enums";
+import { HOW_WE_MET, RELATIONSHIP_GOALS } from "../models/target.model";
 
 /**
  * Confianza normalizada a 0..1.
@@ -55,6 +56,26 @@ export const stateUpdateSchema = z.object({
     })
     .nullish(),
   summaryPatch: z.string().max(900).nullish(),
+  /**
+   * Datos de ella que el usuario solto conversando ("tiene 26", "su insta es
+   * @x"). Cada campo lleva .catch(null): un valor mal extraido se descarta
+   * solo, sin tumbar el resto del stateUpdate ni disparar el retry de
+   * reparacion.
+   */
+  herProfile: z
+    .object({
+      herAge: z.number().int().min(18).max(99).nullish().catch(null),
+      herOccupation: z.string().trim().max(80).nullish().catch(null),
+      instagram: z.preprocess(
+        (v) => (typeof v === "string" ? v.trim().replace(/^@+/, "").toLowerCase() : v),
+        z.string().max(30).regex(/^[a-z0-9._]+$/).nullish().catch(null)
+      ),
+      howWeMet: z.enum(HOW_WE_MET).nullish().catch(null),
+      knownSinceMonths: z.number().int().min(0).max(1200).nullish().catch(null),
+      relationshipGoal: z.enum(RELATIONSHIP_GOALS).nullish().catch(null),
+    })
+    .nullish()
+    .catch(null),
 });
 
 export type StateUpdate = z.infer<typeof stateUpdateSchema>;
