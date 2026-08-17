@@ -13,6 +13,7 @@ import * as card from "../controllers/card.controller";
 import * as legal from "../controllers/legal.controller";
 import * as admin from "../controllers/admin.controller";
 import { adminOnly } from "../middlewares/admin.middleware";
+import * as cron from "../controllers/cron.controller";
 
 function routerApi(app: Application) {
   const router = express.Router();
@@ -192,6 +193,9 @@ function routerApi(app: Application) {
     admin.patchModel
   );
   router.get("/admin/providers", ...authed, adminOnly, admin.providers);
+
+  // --- crons de Vercel (protegidos por CRON_SECRET, ver cron.controller) ---
+  router.get("/cron/reengagement", cron.reengagementCron);
 
   // --- privacidad: derechos implementados en la app, no un correo a atender ---
   router.get("/privacy/export", ...authed, legal.exportData);
