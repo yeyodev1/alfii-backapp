@@ -37,6 +37,18 @@ export interface IAnalysis extends Document {
   image?: IAnalysisImage;
   extractedThread: { speaker: "her" | "him"; text: string; timestamp?: string }[];
 
+  /**
+   * Resumen del historial importado de WhatsApp cuando el export supero la
+   * ventana de 80 mensajes. Vive aqui hasta que el usuario confirma el
+   * expediente: createTargetFromAnalysis lo copia al Target.
+   */
+  importedHistory?: {
+    summary: string;
+    messageCount: number;
+    firstMessageAt?: Date;
+    lastMessageAt?: Date;
+  };
+
   payload: AnalysisPayload;
   scriptFeedback: { style: string; outcome: string; at: Date }[];
 
@@ -86,6 +98,19 @@ const analysisSchema = new Schema<IAnalysis>(
         ),
       ],
       default: [],
+    },
+
+    importedHistory: {
+      type: new Schema(
+        {
+          summary: { type: String, required: true, maxlength: 4000 },
+          messageCount: { type: Number, required: true },
+          firstMessageAt: Date,
+          lastMessageAt: Date,
+        },
+        { _id: false }
+      ),
+      required: false,
     },
 
     payload: {
