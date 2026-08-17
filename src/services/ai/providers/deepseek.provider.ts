@@ -20,13 +20,7 @@ function getClient(): OpenAI {
   return client;
 }
 
-const DEEPSEEK_MODELS: Record<AiTask, string> = {
-  // DeepSeek no lee imagenes. Se declara el modelo de analisis para que el mapa
-  // este completo, pero el gateway nunca le enruta una tarea de vision.
-  vision: env.DEEPSEEK_MODEL_ANALYSIS,
-  chat: env.DEEPSEEK_MODEL_CHAT,
-  analysis: env.DEEPSEEK_MODEL_ANALYSIS,
-};
+import { activeModel } from "../../modelConfig.service";
 
 function toMessages(system: string, parts: AiPart[]) {
   const text = parts
@@ -69,7 +63,9 @@ export const deepseekProvider: AiProvider = {
   },
 
   modelFor(task: AiTask): string {
-    return DEEPSEEK_MODELS[task];
+    // Runtime (portal admin) con env de fallback. El alias vision->analysis
+    // vive en modelConfig.service: DeepSeek nunca recibe tareas de vision.
+    return activeModel("deepseek", task);
   },
 
   async completeJson(call: JsonCall): Promise<RawCompletion> {
