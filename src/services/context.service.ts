@@ -66,6 +66,15 @@ export function buildIdentityLayer(user: IUser, profile: IPowerProfile | null): 
     missing.push("su edad");
   }
 
+  if (user.location?.country || user.location?.city) {
+    const place = [user.location.city, user.location.country].filter(Boolean).join(", ");
+    lines.push(
+      `Ubicacion: ${place}${user.location.confirmed ? "" : " (probable, deducida de la conexion)"}. ` +
+        `Usala para calibrar planes, precios, referencias y costumbres locales; jamas la ` +
+        `menciones como dato tecnico.`
+    );
+  }
+
   if (!profile) {
     lines.push("Matriz de Identidad: sin completar.");
     return [
@@ -201,6 +210,7 @@ export function buildDossierLayer(target: ITarget): string {
     }
     if (typeof her.herAge === "number") lines.push(`  - Edad de ella: ${her.herAge}`);
     if (her.herOccupation) lines.push(`  - Ocupacion de ella: ${her.herOccupation}`);
+    if (her.instagram) lines.push(`  - Instagram de ella: @${her.instagram}`);
     if (her.relationshipGoal) {
       lines.push(`  - Objetivo: ${GOAL_LABELS[her.relationshipGoal] ?? her.relationshipGoal}`);
     }
@@ -301,6 +311,28 @@ export function buildDossierLayer(target: ITarget): string {
 }
 
 // ---------------------------------------------------------------------------
+// Capa 2b - historial importado de WhatsApp (export .txt resumido)
+// ---------------------------------------------------------------------------
+
+export function buildImportedHistoryLayer(target: ITarget): string {
+  const imported = target.importedHistory;
+  if (!imported?.summary) return "";
+
+  const range =
+    imported.firstMessageAt && imported.lastMessageAt
+      ? ` entre ${new Date(imported.firstMessageAt).toISOString().slice(0, 10)} y ` +
+        `${new Date(imported.lastMessageAt).toISOString().slice(0, 10)}`
+      : "";
+
+  return (
+    `=== HISTORIAL IMPORTADO DE WHATSAPP (${imported.messageCount} mensajes${range}) ===\n` +
+    `Resumen de la conversacion real completa que el usuario importo. Es contexto ` +
+    `verificado de lo que paso entre ellos, anterior a lo que ves en las capturas:\n` +
+    imported.summary
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Capa 3 - resumen rodante
 // ---------------------------------------------------------------------------
 
@@ -384,6 +416,8 @@ export async function assembleContext(input: AssembleInput): Promise<AssembledCo
 
   if (input.target) {
     push("dossier", buildDossierLayer(input.target), true);
+    // Protegida: cabe en ~1k tokens y es la memoria mas valiosa del expediente.
+    push("importedHistory", buildImportedHistoryLayer(input.target), true);
     push("summary", buildSummaryLayer(input.target), true);
 
     if (input.includeThreads !== false) {
