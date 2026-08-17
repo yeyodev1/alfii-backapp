@@ -18,11 +18,7 @@ function getClient(): OpenAI {
   return client;
 }
 
-const OPENAI_MODELS: Record<AiTask, string> = {
-  vision: env.OPENAI_MODEL_VISION,
-  chat: env.OPENAI_MODEL_CHAT,
-  analysis: env.OPENAI_MODEL_ANALYSIS,
-};
+import { activeModel } from "../../modelConfig.service";
 
 function toOpenAiContent(parts: AiPart[]) {
   return parts.map((part) =>
@@ -76,7 +72,8 @@ export const openaiProvider: AiProvider = {
   },
 
   modelFor(task: AiTask): string {
-    return OPENAI_MODELS[task];
+    // Runtime (portal admin) con env de fallback; se consulta en cada llamada.
+    return activeModel("openai", task);
   },
 
   async completeJson(call: JsonCall): Promise<RawCompletion> {
