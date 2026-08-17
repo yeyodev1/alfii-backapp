@@ -5,6 +5,17 @@ import { z } from "zod";
  * una variable faltante debe romper el boot, no aparecer como un 500 raro
  * tres endpoints mas adelante.
  */
+/**
+ * Boolean de env que entiende "false". OJO: z.coerce.boolean() usa Boolean()
+ * de JS, donde CUALQUIER cadena no vacia es true — con el, MAIL_ENABLED=false
+ * encendia el correo igual. Aqui solo "true"/"1"/"yes" activan.
+ */
+const envBool = (def: boolean) =>
+  z
+    .string()
+    .default(def ? "true" : "false")
+    .transform((v) => ["true", "1", "yes"].includes(v.trim().toLowerCase()));
+
 const envSchema = z.object({
   DB_URI: z.string().min(1, "DB_URI es obligatoria"),
   DB_PASSWORD: z.string().min(1, "DB_PASSWORD es obligatoria"),
@@ -17,7 +28,7 @@ const envSchema = z.object({
   JWT_EXPIRES_IN: z.string().default("30d"),
 
   GEMINI_API_KEY: z.string().min(1, "GEMINI_API_KEY es obligatoria"),
-  GEMINI_BILLING_CONFIRMED: z.coerce.boolean().default(true),
+  GEMINI_BILLING_CONFIRMED: envBool(true),
   GEMINI_MODEL_VISION: z.string().default("gemini-2.5-flash"),
   /**
    * Conversacion: el modelo mas barato del catalogo de Gemini.
@@ -79,7 +90,7 @@ const envSchema = z.object({
   DEEPSEEK_BASE_URL: z.string().default("https://api.deepseek.com"),
   /** Razonamiento interno. Apagado por defecto: consume del mismo presupuesto
    *  que max_tokens y vaciaba las respuestas cortas. */
-  DEEPSEEK_THINKING: z.coerce.boolean().default(false),
+  DEEPSEEK_THINKING: envBool(false),
   /**
    * Conversacion: v4-flash, el mas barato de DeepSeek y el unico con Responses
    * API (api-docs.deepseek.com/quick_start/pricing).
@@ -101,7 +112,7 @@ const envSchema = z.object({
    * `authenticated` y queda en el hilo de la chica; con false vuelve al modo
    * efimero original. La copia legal debe coincidir con este valor.
    */
-  STORE_SCREENSHOTS: z.coerce.boolean().default(false),
+  STORE_SCREENSHOTS: envBool(false),
   CLOUDINARY_CLOUD_NAME: z.string().default(""),
   CLOUDINARY_API_KEY: z.string().default(""),
   CLOUDINARY_API_SECRET: z.string().default(""),
@@ -121,7 +132,14 @@ const envSchema = z.object({
   MAIL_FROM: z.string().default("Alfii <team@alfii.ec>"),
   MAIL_REPLY_TO: z.string().default("team@alfii.ec"),
   /** Con false los correos se registran en consola y no se envian. */
-  MAIL_ENABLED: z.coerce.boolean().default(false),
+  MAIL_ENABLED: envBool(false),
+
+  /**
+   * Secreto que Vercel manda como "Authorization: Bearer <CRON_SECRET>" al
+   * invocar los cron jobs (/cron/*). Sin el, cualquiera podria disparar el
+   * barrido de re-enganche y vaciar la cuota de Resend. Vacio = crons apagados.
+   */
+  CRON_SECRET: z.string().default(""),
 
   /**
    * Base para los enlaces de los correos. Cada entorno apunta a su frontend:
