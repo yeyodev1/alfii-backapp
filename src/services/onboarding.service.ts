@@ -14,6 +14,7 @@ import {
   SkippableField,
 } from "../schemas/enums";
 import { checkAchievements } from "./achievements.service";
+import { personaDirective } from "../prompts/personas";
 import { isPlausibleBirthDate } from "../utils/age";
 import { CustomError } from "../errors/customError.error";
 import { logMetrics } from "../utils/redact";
@@ -65,12 +66,14 @@ export const STEP_CHIP_OPTIONS: Record<string, { label: string; hint: string }[]
     { label: "Mas de $5.000", hint: "Dolares al mes, aproximado" },
     { label: "Prefiero no decirlo", hint: "Se salta sin coste y seguimos" },
   ],
+  // Descriptivos y no "1..5": el numero lo infiere el modelo de lo que el
+  // usuario elige o cuenta. Pedir la cifra convertia el bloque en formulario.
   PHYSIQUE: [
-    { label: "1", hint: "Fuera de forma y lo sabes" },
-    { label: "2", hint: "Podrias cuidarte bastante mas" },
-    { label: "3", hint: "Normal, ni destacas ni desentonas" },
-    { label: "4", hint: "En forma, se te nota que te cuidas" },
-    { label: "5", hint: "En tu mejor momento fisico" },
+    { label: "Fuera de forma", hint: "Y lo sabes, sin drama: se trabaja desde ahi" },
+    { label: "Podria cuidarme mas", hint: "Nada grave, pero hay margen evidente" },
+    { label: "Normal", hint: "Ni destacas ni desentonas" },
+    { label: "En forma", hint: "Se te nota que te cuidas" },
+    { label: "En mi mejor momento", hint: "El fisico es una de tus palancas" },
     { label: "Prefiero no decirlo", hint: "Se salta sin coste y seguimos" },
   ],
 };
@@ -111,6 +114,36 @@ function sanitizeChipOptions(
 }
 
 /**
+ * ¿El titulo de pregunta que mando el modelo corresponde al reply?
+ *
+ * PORQUE existe: el modelo a veces pone en `question` la pregunta que PLANEA
+ * hacer (p. ej. la de ubicacion que le sugerimos "para un momento natural")
+ * mientras su reply termina preguntando otra cosa. En pantalla eso es un
+ * titulo que no tiene nada que ver con la burbuja del chat. Heuristica barata:
+ * si ninguna palabra significativa del titulo aparece en el reply, se descarta
+ * y el cliente cae al titulo canonico del bloque, que siempre es coherente.
+ */
+function questionMatchesReply(question: string, reply: string): boolean {
+  const normalize = (text: string) =>
+    text
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9\s]/g, " ");
+
+  const replyWords = new Set(normalize(reply).split(/\s+/).filter(Boolean));
+  const significant = normalize(question)
+    .split(/\s+/)
+    .filter((w) => w.length > 3);
+
+  // Sin palabras significativas (titulo ultracorto tipo "¿Y tu?"): se acepta,
+  // no hay con que comparar y descartarlo seria puro azar.
+  if (!significant.length) return true;
+
+  return significant.some((w) => replyWords.has(w));
+}
+
+/**
  * Texto con el que arranca cada bloque.
  *
  * Vive a nivel de modulo y no dentro de onboardingOpener porque `advance` los
@@ -118,35 +151,70 @@ function sanitizeChipOptions(
  * el mismo turno, o el hilo queda con una pregunta del bloque viejo mientras
  * las opciones de abajo ya son las del nuevo.
  */
-const BLOCK_OPENERS: Record<string, string> = {
-  PREFERRED_NAME:
-    "Estas a punto de activar a tu estratega personal: Alfii. Bienvenido a La Auditoria. " +
-    "Antes de seguir, quiero ayudarte bien pero todavia no se como te llamas. Como quieres que me dirija a ti?",
-  BIRTH_DATE:
-    "Un dato mas y te dejo tranquilo. Cuando naciste? Sirve para calibrar el tono: " +
-    "a los 22 y a los 38 no se juega igual, y no quiero darte scripts que suenen prestados.",
-  STATUS:
-    "Ahora si, la parte que importa. Empecemos por lo concreto: a que te dedicas, " +
-    "y que tan bien te va realmente? No me des la version de LinkedIn.",
-  ASSETS:
-    "Ahora lo incomodo. Que tienes tu que la mayoria no? Se honesto, no modesto. " +
-    "Trabajo con activos reales, y si me mientes aqui mis scripts van a fallar en la vida real.",
-  PHILOSOPHY:
-    "Vamos a lo que define tu marco. Que buscas realmente: algo serio, algo casual, " +
-    "o todavia no lo sabes? Esa ultima respuesta tambien es valida.",
-  PERSONALITY:
-    "Por como has hablado durante esta auditoria ya tengo una lectura de ti, " +
-    "pero prefiero que me lo confirmes.",
-  INCOME:
-    "Tema incomodo, lo se, y te digo para que lo quiero: con esto calibro el nivel de los " +
-    "planes que te propongo. Una cita que no puedes sostener te pone en un marco falso, y una " +
-    "que te queda corta desperdicia tu palanca. Dame solo un rango mensual, no la cifra. " +
-    "Y si prefieres saltarlo, se salta y ya.",
-  PHYSIQUE:
-    "Ultimo bloque, y no es vanidad: necesito saber cual es tu palanca real. Si el fisico es " +
-    "un activo fuerte, la estrategia se apoya ahi; si no, la construyo sobre otra cosa. " +
-    "Estatura, peso, y del 1 al 5 como estas hoy. Lo que no quieras decir, lo dejamos.",
+/**
+ * Varias variantes por bloque y se elige una al azar: el mismo parrafo
+ * palabra por palabra en cada cuenta suena a grabacion, no a alguien
+ * hablandote. El tono es de amigo que sabe del tema, no de coach ni de
+ * formulario.
+ */
+const BLOCK_OPENERS: Record<string, string[]> = {
+  PREFERRED_NAME: [
+    "Listo, aqui empieza lo bueno. Soy Alfii, tu estratega personal, y esto funciona " +
+      "mejor si hablamos como amigos. Asi que primero: ¿como te digo? Nombre, apodo, " +
+      "como te digan tus panas.",
+    "Bienvenido. Soy Alfii y voy a estar de tu lado en esto. Pero antes de nada, " +
+      "dime como te llamo: tu nombre o el apodo que uses con tu gente.",
+  ],
+  BIRTH_DATE: [
+    "Una rapida y te dejo: ¿cuando naciste? No es igual aconsejarle a alguien de 22 " +
+      "que de 38, y quiero hablarte en tu idioma, no sonar como tu tio.",
+    "Dato express: tu fecha de nacimiento. Es solo para calibrar el tono, que un " +
+      "consejo con palabras prestadas se nota a kilometros.",
+  ],
+  STATUS: [
+    "Ya, ahora si, cuentame de ti. ¿En que andas, de que vives? Dimelo como se lo " +
+      "contarias a un amigo en la mesa, no como en una entrevista.",
+    "Va la primera de verdad: ¿a que te dedicas? Olvidate de titulos y cargos, " +
+      "cuentamelo como es, que aqui nadie te esta evaluando.",
+  ],
+  ASSETS: [
+    "Ahora lo bueno: ¿que tienes tu que la mayoria no? Entre nosotros, sin modestia. " +
+      "Si me endulzas esto, mis consejos fallan alla afuera, y eso no nos sirve.",
+    "Hablemos de tus armas. ¿Que es lo que mejor te funciona con la gente: la labia, " +
+      "la presencia, el humor? Se honesto, que de eso vive todo lo que te voy a dar.",
+  ],
+  PHILOSOPHY: [
+    "Otra importante: ¿que buscas realmente? ¿Algo serio, algo casual, o todavia lo " +
+      "estas viendo? Cualquiera de las tres vale, incluida la ultima.",
+    "¿Y tu que quieres de todo esto? Serio, casual, o ni idea todavia. Decirmelo " +
+      "claro me evita empujarte a donde no quieres ir.",
+  ],
+  PERSONALITY: [
+    "Por como hablas ya me hago una idea de como eres, pero prefiero que me lo " +
+      "confirmes tu.",
+    "Llevo un rato leyendote y tengo una teoria de tu estilo. Dejame comprobarla contigo.",
+  ],
+  INCOME: [
+    "Esta es incomoda y te explico para que la quiero: con un rango de lo que ganas " +
+      "al mes calibro los planes que te propongo. Ni una cita que te apriete, ni una " +
+      "que te quede corta. Solo el rango, y si prefieres saltarla, cero drama.",
+    "Tema personal y lo puedes saltar sin problema: ¿en que rango andan tus ingresos " +
+      "al mes? No es para juzgar tu billetera, es para proponerte planes que te calcen.",
+  ],
+  PHYSIQUE: [
+    "Ultima y tranquilo, que esto no es un casting: ¿cuanto mides y cuanto pesas, mas " +
+      "o menos? Es para saber sobre que construimos, no para ponerte nota. Lo que no " +
+      "quieras decir, lo dejamos.",
+    "Cerramos con lo fisico, sin juicios: estatura y peso aproximado, y listo. Con eso " +
+      "se cual es tu palanca real y donde apoyar la estrategia.",
+  ],
 };
+
+function pickOpener(stepKey: string): string {
+  const variants = BLOCK_OPENERS[stepKey] ?? [];
+  if (!variants.length) return "";
+  return variants[Math.floor(Math.random() * variants.length)] ?? "";
+}
 
 /**
  * Todo lo que Alfii ya sabe del usuario, en texto plano para el prompt.
@@ -171,6 +239,15 @@ function matrixBrief(user: IUser, profile: IPowerProfile): string {
       (Date.now() - new Date(user.birthDate).getTime()) / (365.25 * 24 * 3600 * 1000)
     );
     if (years > 0 && years < 120) lines.push(`- Tiene ${years} anios.`);
+  }
+
+  if (user.location?.country || user.location?.city) {
+    const place = [user.location.city, user.location.country].filter(Boolean).join(", ");
+    lines.push(
+      user.location.confirmed
+        ? `- Esta en ${place} (confirmado por el).`
+        : `- Probablemente esta en ${place} (deducido de la conexion, SIN confirmar).`
+    );
   }
 
   const status = profile.status ?? {};
@@ -295,6 +372,11 @@ export interface OnboardingState {
    *  pinta junto a la pregunta, no dentro del hilo, para que siga visible
    *  mientras elige. */
   contextNote?: string;
+  /** Titulo de la sub-pregunta de ESTE turno. Vacio al abrir bloque: ahi el
+   *  titulo canonico del bloque es el correcto y lo pone el cliente. */
+  question?: string;
+  /** Voz elegida por el usuario (clave de PERSONAS) o null si aun no elige. */
+  persona?: string | null;
   /** Conversacion previa, para rehidratar el hilo al recargar la pagina. */
   history?: { role: "user" | "alfii"; content: string }[];
   resumed?: boolean;
@@ -367,6 +449,8 @@ export async function onboardingTurn(input: {
   chipSelection?: string[];
   birthDate?: string;
   skip?: SkippableField;
+  /** Pista de ubicacion deducida de la IP de esta peticion. Nunca un hecho. */
+  geo?: { country?: string; city?: string } | null;
 }): Promise<OnboardingState> {
   const profile = await ensureProfile(String(input.user._id));
   const step = Math.min(profile.onboarding.currentStep, ONBOARDING_TOTAL_STEPS - 1);
@@ -382,7 +466,7 @@ export async function onboardingTurn(input: {
     });
     return advance(input.user, profile, {
       reply:
-        "Entendido, seguimos. Solo ten presente que en ese punto voy a trabajar " +
+        "Tranquilo, lo saltamos. Solo ten presente que en ese punto voy a trabajar " +
         "con menos informacion, y lo vas a notar cuando te de los scripts.",
       microLessonId: null,
       suggestedChips: [],
@@ -402,7 +486,7 @@ export async function onboardingTurn(input: {
       $set: { birthDate: new Date(input.birthDate) },
     });
     return advance(input.user, profile, {
-      reply: "Anotado. Con eso ya puedo calibrar el tono de lo que te doy.",
+      reply: "Listo, anotado.",
       microLessonId: null,
       suggestedChips: [],
     });
@@ -425,6 +509,39 @@ export async function onboardingTurn(input: {
   // filosofia debajo.
   const limitReached = turnsInBlock + 1 >= MAX_TURNS_PER_BLOCK;
 
+  // La pista de IP se guarda SIN confirmar en cuanto aparece: asi el resto de
+  // la app puede calibrar con un "probable" mientras el usuario no lo confirme.
+  if (input.geo?.country && !input.user.location?.country) {
+    input.user.location = {
+      country: input.geo.country,
+      city: input.geo.city,
+      confirmed: false,
+    };
+    await UserModel.findByIdAndUpdate(input.user._id, {
+      $set: { location: input.user.location },
+    });
+  }
+
+  // Que hacer con la ubicacion en ESTE turno. Nunca es un bloque propio: se
+  // confirma de pasada, sin frenar el bloque actual ni interrogar.
+  const loc = input.user.location;
+  const locationDirective = loc?.confirmed
+    ? ""
+    : loc?.country
+      ? `\nUBICACION: la conexion sugiere que te habla desde ` +
+        `${[loc.city, loc.country].filter(Boolean).join(", ")}, pero NO esta confirmado ` +
+        `(las VPN mienten). En un momento natural de tu reply, confirmalo de pasada como ` +
+        `lectura tuya ("¿me hablas desde ${loc.city || loc.country}?"). Si lo confirma o ` +
+        `lo corrige, extrae country y city. No frenes el bloque actual por esto ni lo ` +
+        `conviertas en interrogatorio. Para esta confirmacion NO mandes chipOptions: es ` +
+        `pregunta abierta. Y solo cuenta si la haces DENTRO del reply de este turno: si tu ` +
+        `reply no la pregunta, no la pongas en question ni la dejes para "despues".\n`
+      : `\nUBICACION: no sabes desde donde te habla. Si surge natural, pregunta de pasada ` +
+        `su ciudad o pais (sirve para calibrar planes, referencias y costumbres locales) y ` +
+        `extrae country y city cuando lo diga. Nunca lo inventes y NO mandes chipOptions ` +
+        `para esta pregunta: es abierta, no adivines ciudades. Solo cuenta si la preguntas ` +
+        `DENTRO del reply de este turno: jamas la pongas en question si tu reply no la hace.\n`;
+
   const history = profile.onboarding.transcript
     .slice(-10)
     .map((t) => `${t.role === "user" ? "USUARIO" : "ALFII"}: ${t.content}`)
@@ -432,7 +549,7 @@ export async function onboardingTurn(input: {
 
   const result = await generateStructured({
     task: "chat",
-    system: `${ONBOARDING_SYSTEM}\n\n${stepInstruction(step)}`,
+    system: `${ONBOARDING_SYSTEM}\n\n${stepInstruction(step)}${personaDirective(input.user.alfiiPersona)}`,
     parts: [
       {
         text:
@@ -444,14 +561,16 @@ export async function onboardingTurn(input: {
               "bloque: el usuario ya no va a poder contestarla.\n"
             : "") +
           `LO QUE YA SABES DE EL (usalo, no lo repreguntes):\n` +
-          `${matrixBrief(input.user, profile) || "- Todavia nada, es el primer bloque."}\n\n` +
-          `Conversacion reciente:\n${history}`,
+          `${matrixBrief(input.user, profile) || "- Todavia nada, es el primer bloque."}\n` +
+          locationDirective +
+          `\nConversacion reciente:\n${history}`,
       },
     ],
     jsonSchema: onboardingResponseSchema,
     validator: onboardingReplySchema,
     temperature: 0.9,
     maxOutputTokens: 1200,
+    attribution: { userId: String(input.user._id) },
   });
 
   logMetrics("onboarding.turn", {
@@ -503,7 +622,15 @@ export async function onboardingTurn(input: {
   // hay opciones del bloque en vez de dejar al usuario solo con el teclado.
   const state = currentState(profile);
   const modelOptions = sanitizeChipOptions(data.chipOptions);
-  const options = modelOptions.length ? modelOptions : STEP_CHIP_OPTIONS[state.stepKey] ?? [];
+  // Los bloques de identidad son preguntas abiertas (nombre libre, fecha con
+  // selector propio): un chip aqui es siempre un invento del modelo ("Ver las
+  // 5 opciones" sobre "¿como te llamo?" no significa nada). Se suprimen.
+  const OPEN_STEPS = new Set(["PREFERRED_NAME", "BIRTH_DATE"]);
+  const options = OPEN_STEPS.has(state.stepKey)
+    ? []
+    : modelOptions.length
+      ? modelOptions
+      : STEP_CHIP_OPTIONS[state.stepKey] ?? [];
 
   return {
     ...state,
@@ -512,6 +639,10 @@ export async function onboardingTurn(input: {
     suggestedChips: options.map((o) => o.label),
     chipOptions: options,
     contextNote: data.contextNote,
+    question:
+      data.question && questionMatchesReply(data.question, data.reply)
+        ? data.question.trim()
+        : "",
   };
 }
 
@@ -537,6 +668,18 @@ async function applyExtraction(
       $set: { preferredName: String(extracted.preferredName).slice(0, 40) },
     });
     user.preferredName = String(extracted.preferredName).slice(0, 40);
+  }
+
+  // Ubicacion confirmada POR EL USUARIO: pisa la pista de IP y queda firme.
+  if (extracted.country || extracted.city) {
+    const current = user.location ?? { confirmed: false as const };
+    const next = {
+      country: extracted.country ? String(extracted.country).slice(0, 60) : current.country,
+      city: extracted.city ? String(extracted.city).slice(0, 80) : current.city,
+      confirmed: true,
+    };
+    await UserModel.findByIdAndUpdate(user._id, { $set: { location: next } });
+    user.location = next;
   }
 
   if (extracted.profession) profile.status.profession = extracted.profession;
@@ -623,8 +766,12 @@ async function advance(
   // la nueva pregunta, las opciones de abajo aparecen sin que nadie las haya
   // pedido. Se guarda tambien en el transcript para que al recargar la pagina el
   // hilo se vea igual que en vivo.
-  const opener = completed ? "" : BLOCK_OPENERS[state.stepKey] ?? "";
-  const reply = [payload.reply.trim(), opener].filter(Boolean).join("\n\n");
+  const opener = completed ? "" : pickOpener(state.stepKey);
+  // Si viene opener, el cierre NO puede terminar preguntando: dos preguntas en
+  // el mismo turno (la del modelo + la del bloque nuevo) y el usuario solo
+  // puede contestar una. La pregunta valida es siempre la del opener.
+  const closing = opener ? dropTrailingQuestion(payload.reply.trim()) : payload.reply.trim();
+  const reply = [closing, opener].filter(Boolean).join("\n\n");
 
   if (opener) {
     profile.onboarding.transcript.push({ role: "alfii", content: opener, at: new Date() });
@@ -654,6 +801,7 @@ function currentState(profile: IPowerProfile) {
     suggestedChips: [] as string[],
     chipOptions: [] as { label: string; hint: string }[],
     contextNote: "",
+    question: "",
     microLessonId: null as string | null,
     identityMatrix: null as ReturnType<typeof buildIdentityMatrix> | null,
   };
@@ -667,7 +815,7 @@ export async function onboardingOpener(user: IUser): Promise<OnboardingState> {
   if (profile.onboarding.transcript.length === 0) {
     profile.onboarding.transcript.push({
       role: "alfii",
-      content: BLOCK_OPENERS[ONBOARDING_STEPS[step]],
+      content: pickOpener(ONBOARDING_STEPS[step] ?? "PREFERRED_NAME"),
       at: new Date(),
     });
     await profile.save();
@@ -692,7 +840,9 @@ export async function onboardingOpener(user: IUser): Promise<OnboardingState> {
     ...currentState(profile),
     // Si ya hay conversacion previa no se repite el opener: seria Alfii
     // saludando otra vez a mitad de una charla que ya venia avanzada.
-    reply: history.length ? "" : BLOCK_OPENERS[stepKey],
+    reply: history.length ? "" : pickOpener(stepKey ?? "PREFERRED_NAME"),
+    // Para que el cliente sepa si ya eligio voz o toca ofrecer el selector.
+    persona: user.alfiiPersona ?? null,
     history,
     // Retomar significa que el usuario YA hablo. El opener tambien vive en el
     // transcript, asi que mirar solo su longitud daba "retomado" en la primera
