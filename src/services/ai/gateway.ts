@@ -13,6 +13,7 @@ import {
   type StructuredRequest,
   type StructuredResult,
 } from "./types";
+import { recordAiUsage } from "../usage.service";
 
 /**
  * Gateway de modelos.
@@ -123,7 +124,21 @@ export async function generateStructured<T>(
   for (const provider of chain) {
     try {
       const result = await runWithProvider(provider, request);
-      return { ...result, latencyMs: Date.now() - started, failedOver: [...failedOver] };
+      const latencyMs = Date.now() - started;
+
+      // Contabilidad en el UNICO punto por donde pasa toda salida
+      // estructurada. Fire-and-forget: jamas retrasa la respuesta.
+      recordAiUsage({
+        userId: request.attribution?.userId,
+        provider: result.provider,
+        model: result.model,
+        task: request.task,
+        inputTokens: result.inputTokens,
+        outputTokens: result.outputTokens,
+        latencyMs,
+      });
+
+      return { ...result, latencyMs, failedOver: [...failedOver] };
     } catch (error) {
       lastError = error;
       failedOver.push(provider.name);
