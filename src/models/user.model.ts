@@ -56,6 +56,10 @@ export interface IUser extends Document {
   dataSkips: IDataSkip[];
   analysisCount: number;
   lastActiveAt: Date;
+  /** Secuencia de correos de re-enganche: etapa alcanzada (0-3) y ultimo
+   *  envio. Si el usuario vuelve (lastActiveAt > lastSentAt) la etapa se
+   *  reinicia: la proxima ausencia arranca la secuencia desde cero. */
+  reengagement: { stage: number; lastSentAt?: Date };
   plan: "free" | "pro";
   /** Acceso pro sin pagar, otorgado por el admin. Su gasto se registra igual. */
   isVip: boolean;
@@ -126,6 +130,10 @@ const userSchema = new Schema<IUser>(
     dataSkips: { type: [dataSkipSchema], default: [] },
     analysisCount: { type: Number, default: 0 },
     lastActiveAt: { type: Date, default: Date.now },
+    reengagement: {
+      stage: { type: Number, default: 0 },
+      lastSentAt: { type: Date },
+    },
     plan: { type: String, enum: ["free", "pro"], default: "free" },
     isVip: { type: Boolean, default: false },
     isAdmin: { type: Boolean, default: false },
