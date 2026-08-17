@@ -57,6 +57,12 @@ const envSchema = z.object({
   AI_CHAIN_VISION: z.string().default(""),
 
   OPENAI_API_KEY: z.string().default(""),
+  /**
+   * Admin key (sk-admin-) SOLO para el endpoint de costos de la organizacion
+   * en el portal admin. Las project keys no pueden leer facturacion. Nunca se
+   * usa para inferencia (alli las admin keys fallan con 401, ver aviso abajo).
+   */
+  OPENAI_ADMIN_KEY: z.string().default(""),
   OPENAI_MODEL_VISION: z.string().default("gpt-5.6-terra"),
   /**
    * Conversacion: el mas barato de OpenAI (platform.openai.com/docs/pricing).
@@ -125,6 +131,12 @@ const envSchema = z.object({
   APP_URL: z.string().default("http://localhost:5173"),
 
   SLACK_ERROR_WEBHOOK: z.string().default(""),
+
+  /**
+   * Correos con acceso al portal /admin (separados por coma). Vacio = nadie:
+   * el portal existe pero ningun usuario lo puede abrir hasta configurarlo.
+   */
+  ADMIN_EMAILS: z.string().default(""),
 
   LEGAL_CONTACT_PRIVACY: z.string().default("privacidad@alfii.ec"),
   LEGAL_CONTACT_LEGAL: z.string().default("legal@alfii.ec"),
