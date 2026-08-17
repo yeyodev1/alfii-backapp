@@ -8,10 +8,12 @@ import { createApp } from "./app";
 import { verifyGeminiTier } from "./services/ai/gemini.client";
 import { logProviderChain } from "./services/ai/gateway";
 import { screenshotStorageEnabled } from "./services/media/cloudinary.service";
+import { loadModelOverrides } from "./services/modelConfig.service";
 
 async function main() {
   await dbConnect();
   await verifyGeminiTier();
+  await loadModelOverrides();
   logProviderChain();
 
   console.log(
