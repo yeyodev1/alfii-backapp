@@ -16,6 +16,7 @@ import { TargetModel, ITarget } from "../models/target.model";
 import { UserModel, IUser } from "../models/user.model";
 import { PowerProfileModel } from "../models/powerProfile.model";
 import { threadToText } from "./vision.service";
+import { personaDirective } from "../prompts/personas";
 import type { VisionExtraction } from "../schemas/vision.schema";
 import { logMetrics } from "../utils/redact";
 import { CustomError } from "../errors/customError.error";
@@ -84,12 +85,13 @@ export async function runAnalysis(input: RunAnalysisInput): Promise<RunAnalysisR
 
   const result = await generateStructured({
     task: "analysis",
-    system: BUNKER_SYSTEM,
+    system: `${BUNKER_SYSTEM}${personaDirective(input.user.alfiiPersona)}`,
     parts: promptParts,
     jsonSchema: analysisResponseSchema,
     validator: analysisPayloadSchema,
     temperature: 0.85,
     maxOutputTokens: 5000,
+    attribution: { userId: String(input.user._id) },
   });
 
   logMetrics("analysis.run", {
