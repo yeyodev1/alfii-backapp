@@ -39,6 +39,16 @@ export const onboardingReplySchema = z.object({
   contextNote: z.string().max(140).catch("").default(""),
 
   /**
+   * Titulo corto de LA PREGUNTA DE ESTE TURNO.
+   *
+   * PORQUE: el titulo de la tarjeta era estatico por bloque ("¿A que te
+   * dedicas?") mientras el bloque encadena sub-preguntas. El usuario veia ese
+   * titulo con la pregunta de la escala 1-5 debajo: dos preguntas distintas en
+   * la misma tarjeta. Solo el modelo sabe que pregunto en este turno.
+   */
+  question: z.string().max(90).catch("").default(""),
+
+  /**
    * Opciones tocables PARA LA PREGUNTA QUE ACABAS DE HACER.
    *
    * PORQUE llevan hint y las manda el modelo: el catalogo canonico esta atado al
@@ -60,6 +70,10 @@ export const onboardingReplySchema = z.object({
   extracted: z
     .object({
       preferredName: z.string().max(40).nullish().catch(null),
+      // Solo si el usuario lo confirmo o lo dijo: la pista de IP nunca se
+      // extrae sola, porque VPNs y proxies mienten.
+      country: z.string().max(60).nullish().catch(null),
+      city: z.string().max(80).nullish().catch(null),
       profession: z.string().max(120).nullish().catch(null),
       successLevel: optionalInt(1, 5),
       socioeconomic: z.string().max(80).nullish().catch(null),
@@ -125,6 +139,15 @@ export const onboardingResponseSchema = {
         "normal'. Nunca generica ('para conocerte mejor'). Cadena vacia solo si todavia no " +
         "sabes nada de el.",
     },
+    question: {
+      type: "string",
+      description:
+        "La pregunta con la que TERMINA tu reply, como titulo corto (max 80 caracteres) para " +
+        "encabezar la tarjeta. Tiene que ser LA MISMA pregunta que tu reply realmente hace: " +
+        "si tu reply cierra con '¿Te suena?', question resume ESA confirmacion, no la que " +
+        "planeas hacer despues ni la del bloque. JAMAS pongas aqui una pregunta que tu reply " +
+        "no contiene. Cadena vacia si tu reply no pregunta nada.",
+    },
     chipOptions: {
       type: "array",
       description:
@@ -150,6 +173,17 @@ export const onboardingResponseSchema = {
       nullable: true,
       properties: {
         preferredName: { type: "string", nullable: true },
+        country: {
+          type: "string",
+          nullable: true,
+          description:
+            "Pais del usuario, SOLO si el lo confirmo o lo dijo en la conversacion. Nunca lo deduzcas tu de la pista de conexion.",
+        },
+        city: {
+          type: "string",
+          nullable: true,
+          description: "Ciudad del usuario, SOLO si el la confirmo o la dijo.",
+        },
         profession: { type: "string", nullable: true },
         successLevel: { type: "integer", nullable: true, description: "1 a 5" },
         socioeconomic: { type: "string", nullable: true },
