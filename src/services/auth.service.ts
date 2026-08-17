@@ -219,6 +219,7 @@ export function publicUser(user: IUser) {
     preferredName: user.preferredName ?? null,
     hasBirthDate: !!user.birthDate,
     plan: user.plan,
+    isVip: user.isVip === true,
     analysisCount: user.analysisCount,
     legalUpToDate: latest?.version === legal.version,
   };
