@@ -1,5 +1,5 @@
 import { Types } from "mongoose";
-import { TargetModel, ITarget } from "../models/target.model";
+import { TargetModel, ITarget, IHerProfile } from "../models/target.model";
 import type { StateUpdate } from "../schemas/analysis.schema";
 import { ARCHETYPES, RISK_LEVELS, STAGES } from "../schemas/enums";
 import { logEvent } from "../utils/redact";
@@ -188,6 +188,32 @@ export async function applyStateUpdate(
       ...update.timingObserved.herActiveHours,
     ]);
     target.timingPattern.herActiveHours = [...merged].slice(0, 24);
+  }
+
+  // --- datos declarados sobre ella: solo llenan huecos, JAMAS sobreescriben.
+  // Lo que el usuario declaro a mano gana siempre a lo que el extractor creyo
+  // oir; si extrajo mal, el usuario corrige via PATCH her-profile. ---
+  if (update.herProfile) {
+    const currentHer: IHerProfile = target.herProfile ?? {};
+    const nextHer: IHerProfile = { ...currentHer };
+    let herTouched = false;
+
+    for (const key of Object.keys(update.herProfile) as (keyof IHerProfile)[]) {
+      const value = (update.herProfile as Record<string, unknown>)[key];
+      if (value == null || value === "") continue;
+      if (currentHer[key] !== undefined) {
+        rejected.push(`herProfile.${key}:exists`);
+        continue;
+      }
+      (nextHer as Record<string, unknown>)[key] = value;
+      changes.push({ field: `herProfile.${key}`, from: null, to: value });
+      herTouched = true;
+    }
+
+    if (herTouched) {
+      target.herProfile = nextHer;
+      target.markModified("herProfile");
+    }
   }
 
   // --- resumen rodante: se REESCRIBE completo, nunca se concatena ---
