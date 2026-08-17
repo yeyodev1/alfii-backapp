@@ -2,7 +2,8 @@ import { Types } from "mongoose";
 import { generateStructured, generateTextStream } from "./ai/structured";
 import { routeModel } from "./ai/router";
 import { BUNKER_SYSTEM, PROMPT_VERSION } from "../prompts/bunker.system";
-import { assembleContext } from "./context.service";
+import { assembleContext, estimateTokens } from "./context.service";
+import { recordAiUsage } from "./usage.service";
 import { applyStateUpdate } from "./state.service";
 import { maybeCompact } from "./compaction.service";
 import { detectCrisis } from "./crisis.service";
@@ -10,7 +11,9 @@ import { chatReplySchema, chatResponseSchema, greetingResponseSchema, greetingSc
 import { stateUpdateSchema } from "../schemas/analysis.schema";
 import { MessageModel } from "../models/message.model";
 import { signedScreenshotUrl } from "./media/cloudinary.service";
-import { TargetModel, ITarget } from "../models/target.model";
+import { TargetModel, ITarget, HOW_WE_MET, RELATIONSHIP_GOALS } from "../models/target.model";
+import { herProfileCompleteness } from "./target.service";
+import { personaDirective } from "../prompts/personas";
 import { PowerProfileModel } from "../models/powerProfile.model";
 import type { IUser } from "../models/user.model";
 import { logMetrics } from "../utils/redact";
@@ -26,6 +29,16 @@ Si el usuario te cuenta algo que cambia el estado del expediente (acepto una
 cita, se enfrio, dejo de responder, se vieron), reflejalo.
 
 Si te pregunta algo que se responderia mejor con una captura, pidesela.`;
+
+/** Como se nombra cada hueco del perfil de ella al modelo. */
+const HER_FIELD_LABELS: Record<string, string> = {
+  howWeMet: "como se conocieron",
+  knownSinceMonths: "cuanto tiempo llevan hablando",
+  herAge: "la edad de ella",
+  herOccupation: "a que se dedica ella",
+  instagram: "el instagram de ella",
+  relationshipGoal: "que busca el con ella",
+};
 
 const GREETING_MODE = `MODO SALUDO DE REINGRESO.
 El usuario abrio el expediente de esta chica despues de un tiempo sin
@@ -131,13 +144,30 @@ export async function* streamChat(input: {
     },
   ];
 
+  // Huecos del perfil de ella: se le dicen al modelo para que los pida a
+  // goteo en la conversacion, nunca como formulario. El extractor de la
+  // segunda pasada recoge la respuesta y la guarda solo.
+  const missingHer = herProfileCompleteness(input.target)
+    .missing.map((f) => HER_FIELD_LABELS[f])
+    .filter(Boolean);
+  const chatSystem =
+    `${BUNKER_SYSTEM}\n\n${CHAT_MODE}` +
+    (missingHer.length
+      ? `\n\nDATOS QUE TE FALTAN DE ELLA: ${missingHer.join(", ")}. Si fluye de forma ` +
+        `natural, pregunta por UNO como maximo por respuesta, conversacionalmente, ` +
+        `nunca como formulario ni como lista. No repitas una pregunta que ya hiciste ` +
+        `en la conversacion reciente ni fuerces el dato si el tema va por otro lado.`
+      : "") +
+    personaDirective(input.user.alfiiPersona);
+
   let full = "";
   let servedBy = choice.model;
+  let servedProvider = "desconocido";
   try {
     for await (const chunk of generateTextStream(
       {
         task: choice.tier === "pro" ? "analysis" : "chat",
-        system: `${BUNKER_SYSTEM}\n\n${CHAT_MODE}`,
+        system: chatSystem,
         parts,
         temperature: 0.9,
         maxOutputTokens: 1400,
@@ -146,6 +176,7 @@ export async function* streamChat(input: {
         // El failover es invisible para el usuario, pero no para las metricas:
         // si OpenAI empieza a atender la mayoria de los turnos, hay que saberlo.
         servedBy = meta.model;
+        servedProvider = meta.provider;
         if (meta.failedOver.length) {
           console.warn(`[alfii:ai] chat servido por ${meta.provider} tras fallar ${meta.failedOver.join(",")}`);
         }
@@ -187,6 +218,20 @@ export async function* streamChat(input: {
     dropped: context.dropped,
   });
 
+  // El streaming no reporta tokens: se estima con la misma regla de ~4 chars
+  // por token que usa el presupuesto de contexto. Queda marcado `estimated`
+  // para que el portal de administracion no lo venda como dato exacto.
+  recordAiUsage({
+    userId: String(input.user._id),
+    provider: servedProvider,
+    model: servedBy,
+    task: "chat",
+    inputTokens: estimateTokens(chatSystem) + context.tokens + estimateTokens(input.message),
+    outputTokens: estimateTokens(full),
+    latencyMs,
+    estimated: true,
+  });
+
   // El stateUpdate se calcula en una segunda pasada barata: meterlo en el
   // stream obligaria a devolver JSON y perderiamos la sensacion de inmediatez.
   const update = await extractStateUpdate({
@@ -221,7 +266,12 @@ que el usuario dijo. Si nada cambio, devuelve todos los campos en null.
 
 No inventes progreso. No subas medidores por entusiasmo del usuario: solo por
 hechos concretos (acepto una cita, se vieron, hubo contacto fisico, dejo de
-responder). Un medidor optimista y falso es lo peor que puedes producir.`;
+responder). Un medidor optimista y falso es lo peor que puedes producir.
+
+Si el usuario menciono datos de ella (edad, ocupacion, instagram, como se
+conocieron, cuanto llevan hablando, que busca el), devuelvelos en herProfile
+SOLO si el usuario los afirmo de forma explicita. Nunca los deduzcas ni los
+inventes; en la duda, null.`;
 
 async function extractStateUpdate(input: {
   target: ITarget;
@@ -238,7 +288,9 @@ async function extractStateUpdate(input: {
             `Estado actual: etapa ${input.target.stage}, medidores ` +
             `beso ${input.target.meters.current.kiss}, cita ${input.target.meters.current.firstDate}, ` +
             `noche ${input.target.meters.current.firstNight}, riesgo ${input.target.riskProfile.level}.\n` +
-            `Resumen previo: ${input.target.contextSummary || "(vacio)"}\n\n` +
+            `Resumen previo: ${input.target.contextSummary || "(vacio)"}\n` +
+            `Perfil declarado de ella (no repitas lo ya conocido): ` +
+            `${JSON.stringify(input.target.herProfile ?? {})}\n\n` +
             `USUARIO: ${input.userMessage}\nALFII: ${input.alfiiReply}`,
         },
       ],
@@ -257,11 +309,26 @@ async function extractStateUpdate(input: {
               firstNight: { type: "number", nullable: true },
             },
           },
+          herProfile: {
+            type: "object",
+            nullable: true,
+            description:
+              "Datos de ella que el usuario afirmo explicitamente en este intercambio. null si no menciono ninguno.",
+            properties: {
+              herAge: { type: "number", nullable: true },
+              herOccupation: { type: "string", nullable: true },
+              instagram: { type: "string", nullable: true, description: "handle sin @" },
+              howWeMet: { type: "string", enum: [...HOW_WE_MET], nullable: true },
+              knownSinceMonths: { type: "number", nullable: true },
+              relationshipGoal: { type: "string", enum: [...RELATIONSHIP_GOALS], nullable: true },
+            },
+          },
         },
       },
       validator: stateUpdateSchema,
       temperature: 0.2,
       maxOutputTokens: 700,
+      attribution: { userId: String(input.target.userId) },
     });
     return result.data;
   } catch {
@@ -305,7 +372,7 @@ export async function maybeGreet(input: {
   try {
     const result = await generateStructured({
       task: "chat",
-      system: `${BUNKER_SYSTEM}\n\n${GREETING_MODE}`,
+      system: `${BUNKER_SYSTEM}\n\n${GREETING_MODE}${personaDirective(input.user.alfiiPersona)}`,
       parts: [
         {
           text:
@@ -318,6 +385,7 @@ export async function maybeGreet(input: {
       validator: greetingSchema,
       temperature: 0.95,
       maxOutputTokens: 400,
+      attribution: { userId: String(input.user._id) },
     });
 
     const message = await MessageModel.create({
