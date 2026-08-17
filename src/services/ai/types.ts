@@ -74,6 +74,9 @@ export class ProviderError extends Error {
 export interface StructuredRequest<T> extends Omit<JsonCall, "jsonSchema"> {
   jsonSchema: unknown;
   validator: ZodType<T>;
+  /** A quien se le atribuye el gasto de esta llamada. Sin esto la llamada se
+   *  registra igual, pero sin usuario: aparece en el total y no en su ficha. */
+  attribution?: { userId?: string | null };
 }
 
 export interface StructuredResult<T> {
