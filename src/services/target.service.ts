@@ -92,7 +92,15 @@ async function attachAnalysisToTarget(target: ITarget, analysis: any): Promise<I
 
   await TargetModel.findByIdAndUpdate(target._id, {
     $inc: { analysisCount: 1, messageCount: analysis.image?.publicId ? 2 : 1 },
-    $set: { lastAnalysisAt: new Date(), lastMessageAt: new Date() },
+    $set: {
+      lastAnalysisAt: new Date(),
+      lastMessageAt: new Date(),
+      // Si el analisis venia de un import de WhatsApp, su resumen tambien se
+      // muda al expediente fusionado (reemplaza al anterior: es mas completo).
+      ...(analysis.importedHistory
+        ? { importedHistory: { ...analysis.importedHistory, importedAt: new Date() } }
+        : {}),
+    },
   });
 
   return (await TargetModel.findById(target._id)) ?? target;
@@ -192,6 +200,11 @@ export async function createTargetFromAnalysis(input: {
     },
     stage: payload.stateUpdate?.stage ?? "APERTURA",
     contextSummary: payload.stateUpdate?.summaryPatch ?? "",
+    // El resumen del import viajo en el analisis (aun no habia expediente):
+    // al confirmar el nombre se muda a su casa definitiva.
+    importedHistory: analysis.importedHistory
+      ? { ...analysis.importedHistory, importedAt: new Date() }
+      : undefined,
     analysisCount: 1,
     messageCount: 1,
     lastAnalysisAt: analysis.createdAt,
@@ -366,6 +379,7 @@ export function herProfileCompleteness(target: ITarget) {
     { field: "knownSinceMonths", done: typeof her.knownSinceMonths === "number" },
     { field: "herAge", done: typeof her.herAge === "number" },
     { field: "herOccupation", done: !!her.herOccupation },
+    { field: "instagram", done: !!her.instagram },
     { field: "relationshipGoal", done: !!her.relationshipGoal },
   ];
 
