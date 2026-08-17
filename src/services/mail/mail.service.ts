@@ -10,8 +10,9 @@ import { env } from "../../config/env";
  * bloqueo del telefono y queda alojado en un tercero. Todo lo que toque el
  * expediente de una persona real vive dentro de la app y solo ahi.
  *
- * Lo que si se envia: recuperacion de contrasena, aviso de cambio de contrasena
- * y logros del propio usuario. Nada mas.
+ * Lo que si se envia: recuperacion de contrasena, aviso de cambio de contrasena,
+ * logros del propio usuario y recordatorios de re-enganche (que hablan solo de
+ * la cuenta y la "partida" en abstracto). Nada mas.
  */
 
 let client: Resend | null = null;
@@ -200,5 +201,72 @@ export async function sendAchievement(input: {
       cta: { label: "Ver mi progreso", url: appUrl("/heroe") },
     }),
     text: `${hola}${input.detail}\n\n${appUrl("/heroe")}`,
+  });
+}
+
+/**
+ * Re-enganche por inactividad, en tres etapas de tono creciente.
+ *
+ * Regla dura intacta: aqui no se menciona a NADIE que el usuario analice.
+ * Solo se habla de su cuenta y de "la partida" en abstracto. Cada etapa trae
+ * un par de variantes de asunto para que la secuencia no huela a robot.
+ */
+const REENGAGEMENT_STAGES: {
+  subjects: string[];
+  title: string;
+  body: (hola: string) => string;
+  text: (hola: string) => string;
+}[] = [
+  {
+    subjects: ["¿Sigues en la partida?", "Te guardamos el sitio"],
+    title: "La partida sigue abierta",
+    body: (hola) =>
+      `<p>${hola}hace unos dias que no pasas por aqui y solo queria decirte que ` +
+      `todo sigue donde lo dejaste.</p>` +
+      `<p>Si hay una conversacion dandote vueltas, subela y la miramos juntos. ` +
+      `Dos minutos y sales con la jugada clara.</p>`,
+    text: (hola) =>
+      `${hola}hace unos dias que no pasas por aqui. Todo sigue donde lo dejaste.\n\n` +
+      `Si hay una conversacion dandote vueltas, subela y la miramos juntos.`,
+  },
+  {
+    subjects: ["Tu estratega sigue aqui", "Una jugada te espera"],
+    title: "Sigo de tu lado",
+    body: (hola) =>
+      `<p>${hola}una semana sin ti. No pasa nada — pero si dejaste algo a medias, ` +
+      `recuerda que el que deja de jugar no empata: pierde por abandono.</p>` +
+      `<p>Entra, revisa tu expediente y te digo cual es el siguiente movimiento.</p>`,
+    text: (hola) =>
+      `${hola}una semana sin ti. Si dejaste algo a medias, entra y te digo el siguiente movimiento.`,
+  },
+  {
+    subjects: ["¿Lo dejamos aqui?", "Ultima jugada"],
+    title: "Ultima jugada",
+    body: (hola) =>
+      `<p>${hola}llevo dos semanas guardandote el sitio y no quiero llenarte el ` +
+      `correo. Este es el ultimo recordatorio que te mando.</p>` +
+      `<p>Si vuelves, seguimos exactamente donde lo dejamos. Y si no, aqui me ` +
+      `quedo: tu cuenta no caduca.</p>`,
+    text: (hola) =>
+      `${hola}este es el ultimo recordatorio que te mando. Si vuelves, seguimos donde lo dejamos. Tu cuenta no caduca.`,
+  },
+];
+
+export async function sendReengagement(input: { to: string; name?: string; stage: number }) {
+  const tpl = REENGAGEMENT_STAGES[Math.min(input.stage, REENGAGEMENT_STAGES.length - 1)];
+  const hola = input.name ? `${input.name}, ` : "";
+  // Variante pseudo-aleatoria pero estable por destinatario+etapa, para que un
+  // reintento del cron no cambie el asunto del mismo correo.
+  const subject = tpl.subjects[(input.to.length + input.stage) % tpl.subjects.length];
+
+  return send({
+    to: input.to,
+    subject,
+    html: layout({
+      title: tpl.title,
+      body: tpl.body(hola),
+      cta: { label: "Volver a la partida", url: appUrl("/") },
+    }),
+    text: `${tpl.text(hola)}\n\n${appUrl("/")}\n\n¿No quieres estos recordatorios? Responde a este correo y no te mandamos mas.`,
   });
 }
