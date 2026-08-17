@@ -22,7 +22,8 @@ import { logMetrics } from "../utils/redact";
  */
 export async function extractFromScreenshot(
   buffer: Buffer,
-  mimeType: string
+  mimeType: string,
+  userId?: string
 ): Promise<VisionExtraction> {
   // Comprimir antes de enviar: una captura de movil moderna pesa 3-6MB y
   // ~1600px de ancho es mas que suficiente para leer texto de chat.
@@ -48,6 +49,7 @@ export async function extractFromScreenshot(
     validator: visionExtractionSchema,
     temperature: 0.1,
     maxOutputTokens: 3000,
+    attribution: { userId },
   });
 
   logMetrics("vision.extract", {
