@@ -22,6 +22,24 @@ export function optionalAuth(req: AuthRequest, _res: Response, next: NextFunctio
   next();
 }
 
+/**
+ * Pulso de actividad: lastActiveAt alimenta el re-enganche por correo, asi que
+ * debe reflejar CUALQUIER uso de la app, no solo login y analisis. Se escribe
+ * como maximo una vez cada 30 min por usuario (cache en memoria por instancia;
+ * en serverless cada instancia tiene el suyo — de sobra para esta señal).
+ */
+const TOUCH_INTERVAL_MS = 30 * 60 * 1000;
+const lastTouch = new Map<string, number>();
+
+function touchActivity(userId: string, current: Date) {
+  const now = Date.now();
+  const cached = lastTouch.get(userId) ?? current.getTime();
+  if (now - cached < TOUCH_INTERVAL_MS) return;
+  lastTouch.set(userId, now);
+  // Fire-and-forget: el pulso jamas bloquea ni tumba la peticion que lo genero.
+  UserModel.updateOne({ _id: userId }, { $set: { lastActiveAt: new Date() } }).catch(() => {});
+}
+
 /** Carga el documento completo del usuario. Usar despues de authMiddleware. */
 export async function loadUser(req: AuthRequest, _res: Response, next: NextFunction) {
   try {
@@ -29,6 +47,7 @@ export async function loadUser(req: AuthRequest, _res: Response, next: NextFunct
     const user = await UserModel.findById(req.user.userId);
     if (!user) throw new CustomError("Sesion invalida", 401);
     req.currentUser = user;
+    touchActivity(String(user._id), user.lastActiveAt);
     next();
   } catch (error) {
     next(error);
