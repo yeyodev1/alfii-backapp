@@ -1,4 +1,4 @@
-import { MODELS } from "./gemini.client";
+import { geminiModelFor } from "./gemini.client";
 import type { ITarget } from "../../models/target.model";
 
 /**
@@ -44,15 +44,15 @@ export function routeModel(input: {
   target?: ITarget | null;
 }): ModelChoice {
   if (input.hasImage) {
-    return { model: MODELS.analysis, tier: "pro", reason: "captura" };
+    return { model: geminiModelFor("analysis"), tier: "pro", reason: "captura" };
   }
   if (input.forceDeep) {
-    return { model: MODELS.analysis, tier: "pro", reason: "forzado_por_usuario" };
+    return { model: geminiModelFor("analysis"), tier: "pro", reason: "forzado_por_usuario" };
   }
 
   const level = input.target?.riskProfile?.level;
   if (level === "ALTO" || level === "ABORTAR") {
-    return { model: MODELS.analysis, tier: "pro", reason: `riesgo_${level}` };
+    return { model: geminiModelFor("analysis"), tier: "pro", reason: `riesgo_${level}` };
   }
 
   const message = input.message ?? "";
@@ -60,8 +60,8 @@ export function routeModel(input: {
   const isLong = message.length > 220;
 
   if (isStrategic || isLong) {
-    return { model: MODELS.analysis, tier: "pro", reason: isStrategic ? "intencion" : "longitud" };
+    return { model: geminiModelFor("analysis"), tier: "pro", reason: isStrategic ? "intencion" : "longitud" };
   }
 
-  return { model: MODELS.chat, tier: "flash", reason: "conversacion" };
+  return { model: geminiModelFor("chat"), tier: "flash", reason: "conversacion" };
 }
