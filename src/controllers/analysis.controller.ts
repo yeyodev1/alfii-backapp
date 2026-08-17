@@ -11,6 +11,13 @@ import {
 } from "../services/media/cloudinary.service";
 import type { IMessageImage } from "../models/message.model";
 import { requireOwnedTarget, createTargetFromAnalysis, targetSummary } from "../services/target.service";
+import {
+  parseExportOrThrow,
+  buildExtractionFromParsed,
+  summarizeHistory,
+  RECENT_WINDOW,
+} from "../services/import.service";
+import { TargetModel } from "../models/target.model";
 import { AnalysisModel } from "../models/analysis.model";
 import { recordScriptOutcome } from "../services/state.service";
 import { PowerProfileModel } from "../models/powerProfile.model";
@@ -86,7 +93,11 @@ export async function analyzeFirst(req: AuthRequest, res: Response, next: NextFu
   try {
     if (!req.file) throw new CustomError("Necesito una captura.", 400);
 
-    const extraction = await extractFromScreenshot(req.file.buffer, req.file.mimetype);
+    const extraction = await extractFromScreenshot(
+      req.file.buffer,
+      req.file.mimetype,
+      String(req.currentUser!._id)
+    );
     const image = await maybeStore({
       buffer: req.file.buffer,
       userId: String(req.currentUser!._id),
@@ -140,7 +151,11 @@ export async function analyzeForTarget(req: AuthRequest, res: Response, next: Ne
     if (!req.file) throw new CustomError("Necesito una captura.", 400);
 
     const target = await requireOwnedTarget(req.currentUser!._id, param(req, "id"));
-    const extraction = await extractFromScreenshot(req.file.buffer, req.file.mimetype);
+    const extraction = await extractFromScreenshot(
+      req.file.buffer,
+      req.file.mimetype,
+      String(req.currentUser!._id)
+    );
     const image = await maybeStore({
       buffer: req.file.buffer,
       userId: String(req.currentUser!._id),
@@ -164,6 +179,133 @@ export async function analyzeForTarget(req: AuthRequest, res: Response, next: Ne
       thread: analysis.extractedThread,
       imageUrl: image ? signedScreenshotUrl(image.publicId) : null,
       target: targetSummary(fresh),
+      lessons: await resolveLessons(String(req.currentUser!._id), payload.lessonHints ?? []),
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Import de conversacion completa (.txt de WhatsApp o texto pegado)
+// ---------------------------------------------------------------------------
+
+/** Lee el archivo del request y corta si falta. El texto pegado llega igual:
+ *  el cliente lo envuelve en un Blob y usa el mismo campo multipart. */
+function requireExportText(req: AuthRequest): string {
+  if (!req.file) throw new CustomError("Necesito el archivo .txt o el texto del chat.", 400);
+  return req.file.buffer.toString("utf8");
+}
+
+function requireHerName(req: AuthRequest): string {
+  const herName = String(req.body?.herName ?? "").trim();
+  if (!herName) throw new CustomError("Dime cual de los dos es ella.", 400);
+  return herName;
+}
+
+/**
+ * Preview sin LLM: parsea y devuelve participantes y conteos para que el
+ * usuario elija quien es ella. El cliente conserva el texto en memoria y lo
+ * re-envia al analizar: mantener el serverless stateless sale mas barato que
+ * persistir un archivo temporal que ademas prometimos no guardar.
+ */
+export async function previewImport(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const parsed = parseExportOrThrow(requireExportText(req));
+
+    res.json({
+      participants: parsed.participants.map((name) => ({
+        name,
+        messageCount: parsed.stats.byParticipant[name] ?? 0,
+      })),
+      messageCount: parsed.stats.total,
+      mediaFiltered: parsed.stats.mediaFiltered,
+      systemDropped: parsed.stats.systemDropped,
+      // true = el chat supera la ventana literal y lo viejo se resumira
+      willSummarize: parsed.stats.total > RECENT_WINDOW,
+      recentWindow: RECENT_WINDOW,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** Primer analisis desde texto: sin expediente todavia. Espejo de analyzeFirst. */
+export async function analyzeFirstText(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const parsed = parseExportOrThrow(requireExportText(req));
+    const herName = requireHerName(req);
+    const extraction = buildExtractionFromParsed(parsed, herName);
+
+    const { analysis, payload } = await runAnalysis({
+      user: req.currentUser!,
+      target: null,
+      extraction,
+      sourceType: "text",
+    });
+
+    // El resumen del historial viejo se calcula DESPUES del analisis: el
+    // usuario ya tiene su lectura y esto solo enriquece el expediente futuro.
+    const imported = await summarizeHistory(parsed, herName, String(req.currentUser!._id));
+    if (imported) {
+      analysis.importedHistory = imported;
+      await analysis.save();
+    }
+
+    const gated = gateScriptsForAnonymous(payload, req.currentUser!.isAnonymous === true);
+
+    res.status(201).json({
+      analysisId: String(analysis._id),
+      detectedName: extraction.detectedName,
+      platform: extraction.platform,
+      thread: analysis.extractedThread,
+      imageUrl: null,
+      analysis: gated,
+      imported: imported
+        ? { messageCount: imported.messageCount, summarized: true }
+        : { messageCount: parsed.stats.total, summarized: false },
+      lessons: await resolveLessons(String(req.currentUser!._id), payload.lessonHints ?? []),
+      needsNameConfirmation: true,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** Import sobre un expediente existente. Espejo de analyzeForTarget. */
+export async function analyzeTextForTarget(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const target = await requireOwnedTarget(req.currentUser!._id, param(req, "id"));
+    const parsed = parseExportOrThrow(requireExportText(req));
+    const herName = requireHerName(req);
+    const extraction = buildExtractionFromParsed(parsed, herName);
+
+    const { analysis, payload } = await runAnalysis({
+      user: req.currentUser!,
+      target,
+      extraction,
+      sourceType: "text",
+    });
+
+    const imported = await summarizeHistory(parsed, herName, String(req.currentUser!._id));
+    if (imported) {
+      // Un import nuevo reemplaza al anterior entero: es la foto mas completa
+      await TargetModel.findByIdAndUpdate(target._id, {
+        $set: { importedHistory: { ...imported, importedAt: new Date() } },
+      });
+    }
+
+    const fresh = await requireOwnedTarget(req.currentUser!._id, param(req, "id"));
+
+    res.status(201).json({
+      analysisId: String(analysis._id),
+      analysis: gateScriptsForAnonymous(payload, req.currentUser!.isAnonymous === true),
+      thread: analysis.extractedThread,
+      imageUrl: null,
+      target: targetSummary(fresh),
+      imported: imported
+        ? { messageCount: imported.messageCount, summarized: true }
+        : { messageCount: parsed.stats.total, summarized: false },
       lessons: await resolveLessons(String(req.currentUser!._id), payload.lessonHints ?? []),
     });
   } catch (error) {
