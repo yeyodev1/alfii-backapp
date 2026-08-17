@@ -53,6 +53,8 @@ export interface IHerProfile {
   knownSinceMonths?: number;
   herAge?: number;
   herOccupation?: string;
+  /** Handle sin @: se normaliza al guardar para poder construir la URL. */
+  instagram?: string;
   relationshipGoal?: RelationshipGoal;
   notes?: string;
 }
@@ -135,6 +137,19 @@ export interface ITarget extends Document {
   /** Resumen rodante. Se reescribe completo, nunca se concatena. */
   contextSummary: string;
 
+  /**
+   * Resumen del historial importado de WhatsApp (export .txt). Distinto del
+   * contextSummary: este es lo que paso ANTES de conocer a Alfii, aquel es lo
+   * que va pasando con Alfii. Un import nuevo lo sobreescribe entero.
+   */
+  importedHistory?: {
+    summary: string;
+    messageCount: number;
+    firstMessageAt?: Date;
+    lastMessageAt?: Date;
+    importedAt: Date;
+  };
+
   analysisCount: number;
   messageCount: number;
   lastAnalysisAt?: Date;
@@ -172,6 +187,7 @@ const targetSchema = new Schema<ITarget>(
           knownSinceMonths: { type: Number, min: 0, max: 1200 },
           herAge: { type: Number, min: 18, max: 99 },
           herOccupation: { type: String, trim: true, maxlength: 80 },
+          instagram: { type: String, trim: true, lowercase: true, maxlength: 30 },
           relationshipGoal: { type: String, enum: [...RELATIONSHIP_GOALS] },
           notes: { type: String, trim: true, maxlength: 500 },
         },
@@ -290,6 +306,20 @@ const targetSchema = new Schema<ITarget>(
     stage: { type: String, enum: [...STAGES], default: "APERTURA" },
 
     contextSummary: { type: String, default: "", maxlength: 1400 },
+
+    importedHistory: {
+      type: new Schema(
+        {
+          summary: { type: String, required: true, maxlength: 4000 },
+          messageCount: { type: Number, required: true },
+          firstMessageAt: Date,
+          lastMessageAt: Date,
+          importedAt: { type: Date, default: Date.now },
+        },
+        { _id: false }
+      ),
+      required: false,
+    },
 
     analysisCount: { type: Number, default: 0 },
     messageCount: { type: Number, default: 0 },
