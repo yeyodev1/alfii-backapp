@@ -2,7 +2,6 @@ import { Types } from "mongoose";
 import { MessageModel } from "../models/message.model";
 import { TargetModel } from "../models/target.model";
 import { generateStructured } from "./ai/structured";
-import { MODELS } from "./ai/gemini.client";
 import { compactionResponseSchema, compactionSchema } from "../schemas/chat.schema";
 import { COMPACTION_THRESHOLD, RECENT_MESSAGES_WINDOW } from "./context.service";
 import { logEvent } from "../utils/redact";
@@ -73,6 +72,7 @@ export async function maybeCompact(targetId: string | Types.ObjectId): Promise<b
       validator: compactionSchema,
       temperature: 0.4,
       maxOutputTokens: 900,
+      attribution: { userId: String(target.userId) },
     });
 
     target.contextSummary = result.data.summary.slice(0, 1200);
