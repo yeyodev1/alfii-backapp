@@ -1,13 +1,19 @@
 import { GoogleGenAI } from "@google/genai";
 import { env } from "../../config/env";
+import { activeModel } from "../modelConfig.service";
+import type { AiTask } from "./types";
 
 export const genai = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
 
-export const MODELS = {
-  vision: env.GEMINI_MODEL_VISION,
-  chat: env.GEMINI_MODEL_CHAT,
-  analysis: env.GEMINI_MODEL_ANALYSIS,
-} as const;
+/**
+ * Antes era un mapa constante leido del env al importar: cambiar de modelo
+ * exigia redeploy. Ahora consulta la configuracion runtime (portal admin) con
+ * el env como fallback. Funcion y no objeto para que cada llamada vea el
+ * valor vigente.
+ */
+export function geminiModelFor(task: AiTask): string {
+  return activeModel("gemini", task);
+}
 
 /**
  * Ajustes de seguridad.
