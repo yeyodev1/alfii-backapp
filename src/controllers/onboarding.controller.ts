@@ -9,6 +9,9 @@ import {
 } from "../services/onboarding.service";
 import { PowerProfileModel } from "../models/powerProfile.model";
 import { SKIPPABLE_FIELDS } from "../schemas/enums";
+import { requestGeo } from "../utils/geo";
+import { PERSONA_KEYS, PERSONAS, type PersonaKey } from "../prompts/personas";
+import { UserModel } from "../models/user.model";
 import { CustomError } from "../errors/customError.error";
 
 export const onboardingBodySchema = z
@@ -40,6 +43,7 @@ export async function message(req: AuthRequest, res: Response, next: NextFunctio
         chipSelection: req.body.chipSelection,
         birthDate: req.body.birthDate,
         skip: req.body.skip,
+        geo: requestGeo(req),
       })
     );
   } catch (error) {
@@ -66,6 +70,22 @@ export async function completeness(req: AuthRequest, res: Response, next: NextFu
   try {
     const powerProfile = await PowerProfileModel.findOne({ userId: req.currentUser!._id });
     res.json(profileCompleteness(req.currentUser!, powerProfile));
+  } catch (error) {
+    next(error);
+  }
+}
+
+export const personaSchema = z.object({ persona: z.enum(PERSONA_KEYS).nullable() });
+
+/** Con que voz le habla Alfii. null vuelve a la voz por defecto. */
+export async function setPersona(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const persona = req.body.persona as PersonaKey | null;
+    await UserModel.updateOne(
+      { _id: req.currentUser!._id },
+      persona ? { $set: { alfiiPersona: persona } } : { $unset: { alfiiPersona: 1 } }
+    );
+    res.json({ ok: true, persona: persona ? PERSONAS[persona].label : null });
   } catch (error) {
     next(error);
   }
