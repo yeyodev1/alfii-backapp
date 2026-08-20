@@ -86,16 +86,47 @@ export const geminiProvider: AiProvider = {
         config: {
           systemInstruction: call.system,
           temperature: call.temperature ?? 0.9,
-          maxOutputTokens: call.maxOutputTokens ?? 1600,
+          maxOutputTokens: call.maxOutputTokens ?? 2400,
           safetySettings: SAFETY_SETTINGS,
+          // Los tokens de razonamiento descuentan de maxOutputTokens. Sin este
+          // tope el modelo pensaba ~1000 tokens y el texto visible se cortaba
+          // a mitad de palabra por MAX_TOKENS (sin error, solo finishReason).
+          thinkingConfig: { thinkingBudget: call.thinkingBudget ?? 256 },
         },
       });
     } catch (error: any) {
       throw new ProviderError("gemini", error?.message ?? "fallo de red", "network", error);
     }
 
+    let emitted = false;
+    let finishReason: string | undefined;
+    let blockReason: string | undefined;
     for await (const chunk of stream) {
-      if (chunk.text) yield chunk.text;
+      const candidate = chunk.candidates?.[0];
+      if (candidate?.finishReason) finishReason = String(candidate.finishReason);
+      if (chunk.promptFeedback?.blockReason) blockReason = String(chunk.promptFeedback.blockReason);
+      if (chunk.text) {
+        emitted = true;
+        yield chunk.text;
+      }
+    }
+
+    // El stream de Gemini termina "limpio" aunque haya cortado por safety o
+    // por limite: solo lo dice en finishReason. Hay que hacerlo explicito.
+    if (!emitted) {
+      throw new ProviderError(
+        "gemini",
+        `stream vacio (${blockReason ?? finishReason ?? "sin motivo"})`,
+        "blocked",
+        { finishReason, blockReason }
+      );
+    }
+    if (finishReason && finishReason !== "STOP") {
+      if (finishReason === "MAX_TOKENS") {
+        console.warn(`[alfii:ai] gemini/${model} corto por MAX_TOKENS en stream ${call.task}`);
+      } else {
+        throw new ProviderError("gemini", `stream cortado por ${finishReason}`, "blocked", { finishReason });
+      }
     }
   },
 };

@@ -170,7 +170,10 @@ export async function* streamChat(input: {
         system: chatSystem,
         parts,
         temperature: 0.9,
-        maxOutputTokens: 1400,
+        // Presupuesto holgado: el texto visible de un turno ronda 300-600
+        // tokens, pero Gemini descuenta el razonamiento del mismo limite.
+        maxOutputTokens: 2400,
+        thinkingBudget: choice.tier === "pro" ? 512 : 256,
       },
       (meta) => {
         // El failover es invisible para el usuario, pero no para las metricas:
@@ -186,8 +189,14 @@ export async function* streamChat(input: {
       yield { type: "delta", data: chunk };
     }
   } catch (error: any) {
-    yield { type: "error", data: { message: "Se corto la conexion con el modelo." } };
-    return;
+    console.warn(`[alfii:ai] chat stream interrumpido tras ${full.length} chars: ${error?.message}`);
+    if (!full.trim()) {
+      yield { type: "error", data: { message: "Se corto la conexion con el modelo. Intenta de nuevo." } };
+      return;
+    }
+    // Ya se emitio texto: se conserva lo que llego (y se persiste abajo) en
+    // vez de dejar al usuario con una burbuja que desaparece al recargar.
+    yield { type: "error", data: { message: "La respuesta se corto. Pideme que continue.", partial: true } };
   }
 
   if (!full.trim()) {

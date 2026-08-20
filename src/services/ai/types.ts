@@ -38,6 +38,10 @@ export interface StreamCall {
   parts: AiPart[];
   temperature?: number;
   maxOutputTokens?: number;
+  /** Presupuesto de razonamiento interno (Gemini). Comparte limite con
+   *  maxOutputTokens: sin tope, el modelo se lo gasta pensando y la respuesta
+   *  visible sale cortada a mitad de frase. */
+  thinkingBudget?: number;
 }
 
 export interface RawCompletion {
