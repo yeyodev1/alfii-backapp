@@ -66,6 +66,21 @@ export interface IHerProfile {
  * inyecta como datos en cada turno. Por eso Alfii no puede alucinar el
  * arquetipo de una chica: no lo esta recordando, se lo estamos entregando.
  */
+/** Foto de la ficha en un momento dado, con el contexto del expediente que la
+ *  produjo: asi la linea de tiempo puede decir "nivel 62, etapa ESCALADA, 3
+ *  analisis" sin volver a leer nada. */
+export interface IHerCardSnapshot {
+  data: any;
+  version: number;
+  generatedAt: Date;
+  model?: string;
+  analysisCount: number;
+  messageCount: number;
+  stage: string;
+  riskLevel: string;
+  meters: { kiss: number; firstDate: number; firstNight: number };
+}
+
 export interface ITarget extends Document {
   _id: Types.ObjectId;
   userId: Types.ObjectId;
@@ -162,16 +177,34 @@ export interface ITarget extends Document {
 
   /** Ficha tecnica cacheada. `version` es la del dossier con la que se
    *  genero: si difiere de la actual, esta desactualizada. */
-  herCard?: {
-    data: any;
-    version: number;
-    generatedAt: Date;
-    model?: string;
-  };
+  herCard?: IHerCardSnapshot;
+
+  /** Versiones anteriores de la ficha (la actual es `herCard`). Sirve para
+   *  ver como evoluciona ella con fechas. Tope de 24 entradas. */
+  herCardHistory: IHerCardSnapshot[];
 
   createdAt: Date;
   updatedAt: Date;
 }
+
+const herCardSnapshotSchema = new Schema(
+  {
+    data: { type: Schema.Types.Mixed, required: true },
+    version: { type: Number, required: true },
+    generatedAt: { type: Date, default: Date.now },
+    model: String,
+    analysisCount: { type: Number, default: 0 },
+    messageCount: { type: Number, default: 0 },
+    stage: { type: String, default: "APERTURA" },
+    riskLevel: { type: String, default: "LIMPIO" },
+    meters: {
+      kiss: { type: Number, default: 0 },
+      firstDate: { type: Number, default: 0 },
+      firstNight: { type: Number, default: 0 },
+    },
+  },
+  { _id: false }
+);
 
 const targetSchema = new Schema<ITarget>(
   {
@@ -339,18 +372,8 @@ const targetSchema = new Schema<ITarget>(
 
     version: { type: Number, default: 0 },
 
-    herCard: {
-      type: new Schema(
-        {
-          data: { type: Schema.Types.Mixed, required: true },
-          version: { type: Number, required: true },
-          generatedAt: { type: Date, default: Date.now },
-          model: String,
-        },
-        { _id: false }
-      ),
-      required: false,
-    },
+    herCard: { type: herCardSnapshotSchema, required: false },
+    herCardHistory: { type: [herCardSnapshotSchema], default: [] },
   },
   { timestamps: true }
 );

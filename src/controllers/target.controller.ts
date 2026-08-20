@@ -12,7 +12,7 @@ import {
   mergeTargets,
 } from "../services/target.service";
 import { listMessages, maybeGreet, streamChat, withTargetLock } from "../services/chat.service";
-import { getHerCard, hasEnoughEvidence } from "../services/herCard.service";
+import { getHerCard } from "../services/herCard.service";
 import { MILESTONE_KEYS, STAGES } from "../schemas/enums";
 import { HOW_WE_MET, RELATIONSHIP_GOALS, type IHerProfile } from "../models/target.model";
 
@@ -104,16 +104,12 @@ export async function show(req: AuthRequest, res: Response, next: NextFunction) 
   }
 }
 
-/** Ficha tecnica de ella: carta de personaje con todo lo que sabe el dossier. */
+/** Ficha tecnica de ella: carta de personaje + historial de versiones. */
 export async function card(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const target = await requireOwnedTarget(req.currentUser!._id, param(req, "id"));
     const refresh = queryString(req, "refresh") === "1";
-    const card = await getHerCard({ user: req.currentUser!, target, refresh });
-    res.json({
-      card,
-      reason: card ? null : hasEnoughEvidence(target) ? "generation_failed" : "not_enough_evidence",
-    });
+    res.json(await getHerCard({ user: req.currentUser!, target, refresh }));
   } catch (error) {
     next(error);
   }
