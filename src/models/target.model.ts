@@ -160,6 +160,15 @@ export interface ITarget extends Document {
   /** Concurrencia optimista: dos mensajes rapidos no pueden pisar el dossier. */
   version: number;
 
+  /** Ficha tecnica cacheada. `version` es la del dossier con la que se
+   *  genero: si difiere de la actual, esta desactualizada. */
+  herCard?: {
+    data: any;
+    version: number;
+    generatedAt: Date;
+    model?: string;
+  };
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -329,6 +338,19 @@ const targetSchema = new Schema<ITarget>(
     isArchived: { type: Boolean, default: false },
 
     version: { type: Number, default: 0 },
+
+    herCard: {
+      type: new Schema(
+        {
+          data: { type: Schema.Types.Mixed, required: true },
+          version: { type: Number, required: true },
+          generatedAt: { type: Date, default: Date.now },
+          model: String,
+        },
+        { _id: false }
+      ),
+      required: false,
+    },
   },
   { timestamps: true }
 );

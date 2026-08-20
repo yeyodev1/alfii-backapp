@@ -143,6 +143,7 @@ function routerApi(app: Application) {
   );
   router.delete("/targets/:id", ...authed, targets.destroy);
   router.get("/targets/:id/messages", ...authed, targets.messages);
+  router.get("/targets/:id/card", ...authed, targets.card);
   router.get("/targets/:id/greeting", ...authed, targets.greeting);
   router.post(
     "/targets/:id/chat",
