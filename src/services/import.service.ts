@@ -215,3 +215,55 @@ export async function summarizeHistory(
     lastMessageAt: timestamps[timestamps.length - 1],
   };
 }
+
+/**
+ * Brief del chat completo para el prompt de analisis.
+ *
+ * Un export entero no es una captura: el modelo tiene que leer la dinamica
+ * global (quien inicia, como se movio el interes, que paso antes de la ventana
+ * reciente) y no solo el ultimo mensaje. Este bloque se antepone a los ultimos
+ * RECENT_WINDOW mensajes literales y cambia la consigna.
+ */
+export function buildImportBrief(
+  parsed: ParsedChat,
+  herName: string,
+  imported: ImportedHistory | null
+): string {
+  const her = requireHer(parsed, herName);
+  const total = parsed.stats.total;
+  const herCount = parsed.stats.byParticipant[her] ?? 0;
+  const hisCount = total - herCount;
+  const first = parsed.messages[0]?.at;
+  const last = parsed.messages[parsed.messages.length - 1]?.at;
+  const fmt = (d?: Date | null) => (d ? d.toISOString().slice(0, 10) : "?");
+
+  // Quien abre conversacion tras un silencio largo (> 12h): señal barata y
+  // muy informativa de quien persigue a quien.
+  let herOpens = 0;
+  let hisOpens = 0;
+  for (let i = 1; i < parsed.messages.length; i++) {
+    const prev = parsed.messages[i - 1]!;
+    const cur = parsed.messages[i]!;
+    if (!prev.at || !cur.at) continue;
+    if (cur.at.getTime() - prev.at.getTime() > 12 * 3600 * 1000) {
+      if (cur.sender === her) herOpens++;
+      else hisOpens++;
+    }
+  }
+
+  const recent = Math.min(RECENT_WINDOW, total);
+  const lines = [
+    `=== CONVERSACION COMPLETA DE WHATSAPP IMPORTADA ===`,
+    `Total: ${total} mensajes (ELLA ${herCount} / EL ${hisCount}) entre ${fmt(first)} y ${fmt(last)}.`,
+    `Reinicios de conversacion tras >12h de silencio: ELLA ${herOpens} / EL ${hisOpens}.`,
+    `Abajo van los ultimos ${recent} mensajes LITERALES.`,
+  ];
+  if (imported) {
+    lines.push(
+      ``,
+      `--- RESUMEN DE LO ANTERIOR (${imported.messageCount} mensajes previos a la ventana literal) ---`,
+      imported.summary
+    );
+  }
+  return lines.join("\n");
+}

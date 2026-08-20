@@ -29,6 +29,10 @@ export interface RunAnalysisInput {
   /** Referencia a la captura ya subida. Si viene, se ancla al hilo como mensaje
    *  del usuario para que el expediente conserve la conversacion original. */
   image?: IMessageImage | null;
+  /** Brief del chat completo (import de WhatsApp). Si viene, el analisis deja
+   *  de ser "el ultimo mensaje de una captura" y pasa a leer la dinamica
+   *  global: estadisticas + resumen de lo viejo + ventana literal. */
+  importBrief?: string | null;
 }
 
 export interface RunAnalysisResult {
@@ -67,21 +71,29 @@ export async function runAnalysis(input: RunAnalysisInput): Promise<RunAnalysisR
     includeHistory: !!input.target,
   });
 
-  const promptParts = [
-    {
-      text:
-        `${context.text}\n\n` +
-        `=== CAPTURA A ANALIZAR ===\n` +
-        `Plataforma: ${input.extraction.platform}\n` +
-        (input.extraction.detectedName
-          ? `Nombre en el encabezado: ${input.extraction.detectedName}\n`
-          : "") +
-        `Confianza de la extraccion: ${Math.round(input.extraction.confidence * 100)}%\n\n` +
-        `${threadText}\n\n` +
-        `Analiza el ultimo mensaje de ELLA en el contexto de todo el hilo. ` +
-        `Cita fragmentos literales para sostener tu lectura.`,
-    },
-  ];
+  const header = input.importBrief
+    ? `${input.importBrief}\n\n` +
+      `=== ULTIMOS MENSAJES (LITERALES) ===\n` +
+      `Plataforma: ${input.extraction.platform}\n` +
+      (input.extraction.detectedName ? `Ella: ${input.extraction.detectedName}\n` : "") +
+      `\n${threadText}\n\n` +
+      `Tienes la conversacion COMPLETA, no una captura. Analiza la dinamica global: ` +
+      `quien inicia y quien cierra, como evoluciono el interes de ella desde el principio ` +
+      `hasta hoy, patrones que se repiten, el punto de inflexion si lo hubo, y recien ` +
+      `entonces el ultimo mensaje de ELLA como sintoma de todo eso. El arquetipo y los ` +
+      `medidores deben salir del historial entero, no de los ultimos tres mensajes. ` +
+      `Cita fragmentos literales (de la ventana o del resumen) para sostener cada lectura.`
+    : `=== CAPTURA A ANALIZAR ===\n` +
+      `Plataforma: ${input.extraction.platform}\n` +
+      (input.extraction.detectedName
+        ? `Nombre en el encabezado: ${input.extraction.detectedName}\n`
+        : "") +
+      `Confianza de la extraccion: ${Math.round(input.extraction.confidence * 100)}%\n\n` +
+      `${threadText}\n\n` +
+      `Analiza el ultimo mensaje de ELLA en el contexto de todo el hilo. ` +
+      `Cita fragmentos literales para sostener tu lectura.`;
+
+  const promptParts = [{ text: `${context.text}\n\n${header}` }];
 
   const result = await generateStructured({
     task: "analysis",

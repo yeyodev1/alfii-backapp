@@ -14,6 +14,7 @@ import { requireOwnedTarget, createTargetFromAnalysis, targetSummary } from "../
 import {
   parseExportOrThrow,
   buildExtractionFromParsed,
+  buildImportBrief,
   summarizeHistory,
   RECENT_WINDOW,
 } from "../services/import.service";
@@ -237,16 +238,18 @@ export async function analyzeFirstText(req: AuthRequest, res: Response, next: Ne
     const herName = requireHerName(req);
     const extraction = buildExtractionFromParsed(parsed, herName);
 
+    // El resumen del historial viejo se calcula ANTES del analisis: con el chat
+    // completo la lectura debe salir de toda la historia, no de la ventana.
+    const imported = await summarizeHistory(parsed, herName, String(req.currentUser!._id));
+
     const { analysis, payload } = await runAnalysis({
       user: req.currentUser!,
       target: null,
       extraction,
       sourceType: "text",
+      importBrief: buildImportBrief(parsed, herName, imported),
     });
 
-    // El resumen del historial viejo se calcula DESPUES del analisis: el
-    // usuario ya tiene su lectura y esto solo enriquece el expediente futuro.
-    const imported = await summarizeHistory(parsed, herName, String(req.currentUser!._id));
     if (imported) {
       analysis.importedHistory = imported;
       await analysis.save();
@@ -280,14 +283,16 @@ export async function analyzeTextForTarget(req: AuthRequest, res: Response, next
     const herName = requireHerName(req);
     const extraction = buildExtractionFromParsed(parsed, herName);
 
+    const imported = await summarizeHistory(parsed, herName, String(req.currentUser!._id));
+
     const { analysis, payload } = await runAnalysis({
       user: req.currentUser!,
       target,
       extraction,
       sourceType: "text",
+      importBrief: buildImportBrief(parsed, herName, imported),
     });
 
-    const imported = await summarizeHistory(parsed, herName, String(req.currentUser!._id));
     if (imported) {
       // Un import nuevo reemplaza al anterior entero: es la foto mas completa
       await TargetModel.findByIdAndUpdate(target._id, {
