@@ -114,6 +114,7 @@ export const MESSAGE_KINDS = [
   "greeting",
   "lesson",
   "stateChange",
+  "audio",
 ] as const;
 export type MessageKind = (typeof MESSAGE_KINDS)[number];
 

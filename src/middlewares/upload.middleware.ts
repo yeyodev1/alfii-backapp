@@ -37,3 +37,22 @@ export const uploadTextExport = multer({
     cb(null, true);
   },
 }).single("export");
+
+/**
+ * Nota de voz para transcribir. Memoria, como todo lo demas: el audio no se
+ * guarda, solo el texto. 25 MB cubre audios largos de WhatsApp (opus ~1.6 KB/s
+ * = horas) y m4a de iPhone razonables. Octet-stream permitido porque los
+ * share sheets moviles mandan el .opus sin MIME; la extension desambigua.
+ */
+export const uploadAudio = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    const okMime = /^(audio\/|video\/webm|video\/mp4|application\/ogg)/.test(file.mimetype);
+    const okName = /\.(opus|ogg|oga|m4a|mp4|aac|mp3|wav|webm|flac|amr)$/i.test(file.originalname || "");
+    if (!okMime && !(file.mimetype === "application/octet-stream" && okName)) {
+      return cb(new CustomError("Solo acepto audios (opus, ogg, m4a, mp3, wav, webm).", 400));
+    }
+    cb(null, true);
+  },
+}).single("audio");

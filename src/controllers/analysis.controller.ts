@@ -25,6 +25,8 @@ import { PowerProfileModel } from "../models/powerProfile.model";
 import { MAX_AUTO_LESSONS_PER_SESSION } from "../schemas/enums";
 import { CustomError } from "../errors/customError.error";
 import { gateScriptsForAnonymous } from "../utils/scriptGating";
+import { transcribeAudio } from "../services/transcription.service";
+import { MessageModel } from "../models/message.model";
 
 export const confirmTargetSchema = z.object({
   analysisId: z.string().min(1),
@@ -402,6 +404,54 @@ export async function submitScriptFeedback(req: AuthRequest, res: Response, next
     }
 
     res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Nota de voz → texto en el hilo. SOLO transcribe: no analiza, no opina. El
+ * texto queda como mensaje del usuario (kind "audio") y entra al contexto de
+ * Alfii por la capa de historial, asi el usuario puede preguntar por el.
+ */
+export async function transcribeForTarget(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const target = await requireOwnedTarget(req.currentUser!._id, param(req, "id"));
+    const file = req.file;
+    if (!file?.buffer?.length) throw new CustomError("Falta el audio.", 400);
+
+    const result = await transcribeAudio({
+      buffer: file.buffer,
+      mimetype: file.mimetype,
+      filename: file.originalname || "audio.ogg",
+      userId: String(req.currentUser!._id),
+    });
+
+    const message = await MessageModel.create({
+      userId: req.currentUser!._id,
+      targetId: target._id,
+      role: "user",
+      kind: "audio",
+      content: result.text,
+      meta: { model: result.model, latencyMs: result.latencyMs },
+    });
+
+    await TargetModel.findByIdAndUpdate(target._id, {
+      $set: { lastMessageAt: new Date() },
+      $inc: { messageCount: 1 },
+    });
+
+    res.status(201).json({
+      message: {
+        _id: String(message._id),
+        role: "user",
+        kind: "audio",
+        content: result.text,
+        createdAt: message.createdAt,
+      },
+      provider: result.provider,
+      latencyMs: result.latencyMs,
+    });
   } catch (error) {
     next(error);
   }

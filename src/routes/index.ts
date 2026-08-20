@@ -2,7 +2,7 @@ import express, { Application } from "express";
 import { authMiddleware } from "../middlewares/auth.middleware";
 import { loadUser } from "../middlewares/optionalAuth.middleware";
 import { validateBody } from "../middlewares/validate.middleware";
-import { uploadScreenshot, uploadTextExport } from "../middlewares/upload.middleware";
+import { uploadScreenshot, uploadTextExport, uploadAudio } from "../middlewares/upload.middleware";
 import { analysisLimiter, chatLimiter, authLimiter } from "../middlewares/rateLimit.middleware";
 
 import * as auth from "../controllers/auth.controller";
@@ -165,6 +165,13 @@ function routerApi(app: Application) {
     analysisLimiter,
     uploadTextExport,
     analysis.analyzeTextForTarget
+  );
+  router.post(
+    "/targets/:id/transcribe",
+    ...authed,
+    analysisLimiter,
+    uploadAudio,
+    analysis.transcribeForTarget
   );
 
   // --- administracion: gasto de IA global y por usuario ---

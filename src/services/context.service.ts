@@ -382,7 +382,8 @@ export async function buildHistoryLayer(targetId: string): Promise<string> {
     .reverse()
     .map((m) => {
       const who = m.role === "user" ? "USUARIO" : "ALFII";
-      const prefix = m.kind === "analysis" ? "[analisis entregado] " : "";
+      const prefix =
+        m.kind === "analysis" ? "[analisis entregado] " : m.kind === "audio" ? "[audio de ella transcrito] " : "";
       return `${who}: ${prefix}${m.content}`.slice(0, 900);
     })
     .join("\n");
