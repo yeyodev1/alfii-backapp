@@ -383,9 +383,17 @@ export async function buildHistoryLayer(targetId: string): Promise<string> {
     .map((m) => {
       const who = m.role === "user" ? "USUARIO" : "ALFII";
       const prefix =
-        m.kind === "analysis" ? "[analisis entregado] " : m.kind === "audio" ? "[audio de ella transcrito] " : "";
+        m.kind === "analysis"
+          ? "[analisis entregado] "
+          : m.kind === "audio"
+            ? "[audio de ella transcrito] "
+            : m.kind === "screenshot"
+              ? "[captura subida: el chat con ella] "
+              : "";
+      if (m.kind === "screenshot" && !m.content) return null;
       return `${who}: ${prefix}${m.content}`.slice(0, 900);
     })
+    .filter((l): l is string => !!l)
     .join("\n");
 
   return `=== CONVERSACION RECIENTE CONTIGO ===\n${lines}`;

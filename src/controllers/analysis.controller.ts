@@ -28,6 +28,8 @@ import { gateScriptsForAnonymous } from "../utils/scriptGating";
 import { transcribeAudio } from "../services/transcription.service";
 import { buildTimeline, readTrajectory } from "../services/trajectory.service";
 import { getUs, readUs, readPhoto, photoReadingToText } from "../services/us.service";
+import { triageScreenshot, MILESTONE_LABELS } from "../services/screenshotTriage.service";
+import { threadToText } from "../services/vision.service";
 import { MessageModel } from "../models/message.model";
 
 export const confirmTargetSchema = z.object({
@@ -181,6 +183,55 @@ export async function analyzeForTarget(req: AuthRequest, res: Response, next: Ne
       });
     }
 
+    // Triaje: por defecto una captura se responde como chat. El estudio de 6
+    // bloques solo cuando hay un hito (o el usuario lo pide con mode=full).
+    const wantFull = String(req.body?.mode ?? "") === "full";
+    let triage: Awaited<ReturnType<typeof triageScreenshot>> | null = null;
+    if (!wantFull) {
+      try {
+        triage = await triageScreenshot({ user: req.currentUser!, target, extraction, userNote });
+      } catch (error: any) {
+        // Si el triaje falla, no se pierde la captura: cae al analisis completo.
+        console.warn(`[alfii:triage] fallo, se hace analisis completo: ${error?.message}`);
+      }
+    }
+
+    if (triage && !triage.milestone) {
+      // Turno normal: captura + respuesta de chat al hilo. El texto extraido
+      // (con horas) queda en el mensaje de la captura para que el contexto de
+      // los siguientes turnos lo tenga aunque no haya Analysis.
+      await MessageModel.create({
+        userId: req.currentUser!._id,
+        targetId: target._id,
+        role: "user",
+        kind: "screenshot",
+        content: threadToText(extraction.thread).slice(0, 4000),
+        image: image ?? undefined,
+      });
+      const replyMsg = await MessageModel.create({
+        userId: req.currentUser!._id,
+        targetId: target._id,
+        role: "alfii",
+        kind: "text",
+        content: triage.reply,
+      });
+      await TargetModel.findByIdAndUpdate(target._id, {
+        $set: { lastMessageAt: new Date() },
+        $inc: { messageCount: userNote ? 3 : 2 },
+      });
+      const freshLight = await requireOwnedTarget(req.currentUser!._id, param(req, "id"));
+      res.status(201).json({
+        mode: "chat",
+        reply: triage.reply,
+        replyMessageId: String(replyMsg._id),
+        reason: triage.reason,
+        thread: extraction.thread,
+        imageUrl: image ? signedScreenshotUrl(image.publicId) : null,
+        target: targetSummary(freshLight),
+      });
+      return;
+    }
+
     const { analysis, payload } = await runAnalysis({
       user: req.currentUser!,
       target,
@@ -194,6 +245,12 @@ export async function analyzeForTarget(req: AuthRequest, res: Response, next: Ne
     // Tambien aqui: un anonimo puede confirmar expediente y seguir analizando.
     // Si este handler no aplicara el gate, seria la puerta trasera del bloqueo.
     res.status(201).json({
+      mode: "analysis",
+      milestone: triage?.milestone
+        ? { kind: triage.milestoneKind, label: triage.milestoneLabel || MILESTONE_LABELS[triage.milestoneKind] }
+        : wantFull
+          ? { kind: "REQUESTED", label: "Análisis completo a pedido" }
+          : null,
       analysisId: String(analysis._id),
       analysis: gateScriptsForAnonymous(payload, req.currentUser!.isAnonymous === true),
       thread: analysis.extractedThread,
