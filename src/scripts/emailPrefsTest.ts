@@ -1,0 +1,20 @@
+import "dotenv/config";
+import mongoose from "mongoose";
+import { env } from "../config/env";
+import { UserModel } from "../models/user.model";
+import { unsubscribeToken, verifyUnsubscribeToken, requireUserByToken, updatePrefs, emailPrefsUrl } from "../services/emailPrefs.service";
+(async () => {
+  await mongoose.connect(env.DB_URI);
+  const u = await UserModel.create({ email: `test-prefs-${Date.now()}@example.com`, passwordHash: "x", isAnonymous: false });
+  const id = String(u._id);
+  const t = unsubscribeToken(id);
+  console.log("url:", emailPrefsUrl(id).replace(/t=.*/, "t=<hmac>"));
+  console.log("verify ok:", verifyUnsubscribeToken(id, t), "| bad:", verifyUnsubscribeToken(id, t.slice(0, -1) + "0"));
+  const user = await requireUserByToken(id, t);
+  console.log("byToken email:", user.email);
+  console.log("unsub:", JSON.stringify(await updatePrefs(id, { reengagement: false })));
+  const again = await UserModel.findById(id).select("emailPrefs").lean();
+  console.log("persisted:", JSON.stringify(again?.emailPrefs));
+  await UserModel.deleteOne({ _id: u._id });
+  await mongoose.disconnect();
+})().catch((e) => { console.error("ERR", e.message); process.exit(1); });
