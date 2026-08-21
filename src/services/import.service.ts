@@ -110,17 +110,34 @@ export function buildExtractionFromParsed(parsed: ParsedChat, herName: string): 
   const her = requireHer(parsed, herName);
   const recent = parsed.messages.slice(-RECENT_WINDOW);
 
+  const fmtTime = (d: Date) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  const fmtDay = (d: Date) => d.toISOString().slice(0, 10);
+  let lastDay = "";
+  const days = new Set<string>();
+  const thread = recent.map((m) => {
+    const day = m.at ? fmtDay(m.at) : "";
+    const dateLabel = day && day !== lastDay ? day : null;
+    if (day) { lastDay = day; days.add(day); }
+    return {
+      speaker: m.sender === her ? ("her" as const) : ("him" as const),
+      text: m.text.slice(0, 1200),
+      timestamp: m.at ? fmtTime(m.at) : null,
+      dateLabel,
+    };
+  });
   return {
     readable: true,
     issue: null,
     detectedName: her,
     platform: "whatsapp",
     confidence: 1,
-    thread: recent.map((m) => ({
-      speaker: m.sender === her ? ("her" as const) : ("him" as const),
-      text: m.text.slice(0, 1200),
-      timestamp: m.at ? m.at.toISOString() : null,
-    })),
+    thread,
+    timeline: {
+      hasTimes: thread.some((t) => !!t.timestamp),
+      daySeparators: [...days],
+      spansMultipleDays: days.size > 1,
+      note: null,
+    },
   };
 }
 

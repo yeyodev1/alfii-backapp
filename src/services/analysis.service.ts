@@ -15,7 +15,7 @@ import { MessageModel, type IMessageImage } from "../models/message.model";
 import { TargetModel, ITarget } from "../models/target.model";
 import { UserModel, IUser } from "../models/user.model";
 import { PowerProfileModel } from "../models/powerProfile.model";
-import { threadToText } from "./vision.service";
+import { threadToText, timelineBrief } from "./vision.service";
 import { personaDirective } from "../prompts/personas";
 import type { VisionExtraction } from "../schemas/vision.schema";
 import { logMetrics } from "../utils/redact";
@@ -90,10 +90,11 @@ export async function runAnalysis(input: RunAnalysisInput): Promise<RunAnalysisR
       (input.extraction.detectedName
         ? `Nombre en el encabezado: ${input.extraction.detectedName}\n`
         : "") +
-      `Confianza de la extraccion: ${Math.round(input.extraction.confidence * 100)}%\n\n` +
+      `Confianza de la extraccion: ${Math.round(input.extraction.confidence * 100)}%\n` +
+      `Tiempo: ${timelineBrief(input.extraction)}\n\n` +
       `${threadText}\n\n` +
-      `Analiza el ultimo mensaje de ELLA en el contexto de todo el hilo. ` +
-      `Cita fragmentos literales para sostener tu lectura.`;
+      `Primero lee el reloj (horas, dias, saltos) y despues el ultimo mensaje de ELLA ` +
+      `en el contexto de todo el hilo. Cita fragmentos literales y horas para sostener tu lectura.`;
 
   const noteBlock = input.userNote?.trim()
     ? `\n\n=== LO QUE EL USUARIO PREGUNTA O ACLARA SOBRE ESTA CAPTURA ===\n${input.userNote.trim().slice(0, 600)}\n` +
@@ -206,6 +207,18 @@ async function persistAnalysisIntoTarget(
       kind: "screenshot",
       content: "",
       image,
+    });
+  }
+
+  // La pregunta aclaratoria va al hilo como mensaje de Alfii: el usuario la
+  // responde en el chat y la capa de historial la lleva al siguiente turno.
+  if (payload.clarifyingQuestion?.trim()) {
+    await MessageModel.create({
+      userId: target.userId,
+      targetId: target._id,
+      role: "alfii",
+      kind: "text",
+      content: payload.clarifyingQuestion.trim(),
     });
   }
 

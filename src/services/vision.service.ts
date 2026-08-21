@@ -112,6 +112,58 @@ function sanitizeThread(extraction: VisionExtraction): VisionExtraction {
   };
 }
 
+/** Parsea "21:14", "9:05 p. m.", "9:05pm" a minutos del dia; null si no. */
+function minutesOf(ts: string | null | undefined): number | null {
+  if (!ts) return null;
+  const m = ts.match(/(\d{1,2})[:.](\d{2})\s*([ap])?\.?\s*m?\.?/i);
+  if (!m) return null;
+  let h = Number(m[1]);
+  const min = Number(m[2]);
+  const ap = m[3]?.toLowerCase();
+  if (ap === "p" && h < 12) h += 12;
+  if (ap === "a" && h === 12) h = 0;
+  if (h > 23 || min > 59) return null;
+  return h * 60 + min;
+}
+
+/**
+ * Hilo como texto para el modelo, CON tiempo: hora por mensaje, separadores
+ * de dia y marcadores de salto cuando pasan horas entre burbujas (o la hora
+ * retrocede, que casi siempre significa que cambio el dia). Sin esto el
+ * modelo lee 'ok' seguido de 'hola?' como un intercambio de segundos cuando
+ * pudieron pasar dos dias.
+ */
 export function threadToText(thread: VisionExtraction["thread"]): string {
-  return thread.map((m) => `${m.speaker === "her" ? "ELLA" : "EL"}: ${m.text}`).join("\n");
+  const lines: string[] = [];
+  let prev: number | null = null;
+  for (const m of thread) {
+    if (m.dateLabel) {
+      lines.push(`--- ${m.dateLabel} ---`);
+      prev = null;
+    }
+    const cur = minutesOf(m.timestamp);
+    if (prev != null && cur != null) {
+      const diff = cur - prev;
+      if (diff < -60) lines.push(`[salto: la hora retrocede (${m.timestamp}); probablemente otro dia]`);
+      else if (diff >= 180) lines.push(`[pasan ~${Math.round(diff / 60)} h]`);
+      else if (diff >= 45) lines.push(`[pasan ~${diff} min]`);
+    }
+    if (cur != null) prev = cur;
+    const time = m.timestamp ? ` (${m.timestamp})` : "";
+    lines.push(`${m.speaker === "her" ? "ELLA" : "EL"}${time}: ${m.text}`);
+  }
+  return lines.join("\n");
+}
+
+/** Resumen temporal para el prompt, a partir de timeline + thread. */
+export function timelineBrief(extraction: VisionExtraction): string {
+  const t = extraction.timeline;
+  const withTimes = extraction.thread.filter((m) => m.timestamp).length;
+  const parts = [
+    `Horas visibles: ${withTimes}/${extraction.thread.length} mensajes.`,
+    t?.daySeparators?.length ? `Separadores de dia: ${t.daySeparators.join(" · ")}.` : "Sin separadores de dia visibles.",
+    t?.spansMultipleDays === true ? "La captura abarca MAS DE UN DIA." : t?.spansMultipleDays === false ? "Todo parece el mismo dia." : "No se sabe si es el mismo dia.",
+    t?.note ? `Ambiguedad: ${t.note}` : "",
+  ].filter(Boolean);
+  return parts.join(" ");
 }

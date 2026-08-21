@@ -30,6 +30,20 @@ descripcion o texto encima, transcribela: [foto: dos amigas en la playa].
 Un mensaje sin texto y sin marcador se pierde del analisis, asi que siempre
 pon el marcador.
 
+TIEMPO (CRITICO)
+Una captura NO es un hilo continuo: entre dos burbujas pueden pasar minutos o
+dias. Captura TODO lo temporal que se vea:
+- La hora de cada burbuja, literal, en timestamp. En WhatsApp la hora aparece
+  abajo a la derecha de cada burbuja; en grupos de burbujas seguidas a veces
+  solo en la ultima: repitela en las del grupo.
+- Los SEPARADORES DE DIA (pastillas centradas: "Hoy", "Ayer", "12 de agosto",
+  "lunes", "14/08/25"). Ponlos en dateLabel del PRIMER mensaje que va debajo
+  y tambien en timeline.daySeparators en orden.
+- Si las horas saltan (ej. 23:40 → 09:15) sin separador, anotalo en
+  timeline.note: probablemente cambio el dia.
+- timeline.hasTimes = false solo si no se ve ninguna hora.
+No inventes horas ni fechas: si no se ven, null y dilo en timeline.note.
+
 LEGIBILIDAD
 Marca readable en false y explica el problema en issue si:
 - la imagen no es una conversacion de chat

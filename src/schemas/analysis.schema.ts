@@ -128,6 +128,10 @@ export const analysisPayloadSchema = z.object({
     firstNight: z.number().min(0).max(100),
   }),
   lead: z.string().max(400),
+  /** Una pregunta concreta al usuario cuando el contexto temporal (que dia,
+   *  cuanto paso entre mensajes) no se ve y cambia la lectura. null si todo
+   *  esta claro. */
+  clarifyingQuestion: z.string().max(240).nullish(),
   stateUpdate: stateUpdateSchema.nullish(),
   lessonHints: z.array(z.string().max(40)).max(3).default([]),
 });
@@ -246,6 +250,12 @@ export const analysisResponseSchema = {
           },
         },
       },
+    },
+    clarifyingQuestion: {
+      type: "string",
+      nullable: true,
+      description:
+        "Si NO se ve que dia fue o cuanto tiempo paso entre mensajes y eso cambia la lectura, UNA pregunta corta y concreta al usuario (ej. '¿Su \"ok\" y tu \"hola?\" fueron el mismo dia o pasaron dias?'). null si el tiempo esta claro o no importa",
     },
     lessonHints: {
       type: "array",

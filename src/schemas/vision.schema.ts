@@ -17,9 +17,20 @@ export const visionExtractionSchema = z.object({
         speaker: z.enum(["her", "him"]),
         text: z.string(),
         timestamp: z.string().nullable(),
+        /** Separador de dia visible ENCIMA de este mensaje ("Hoy", "Ayer",
+         *  "12 de agosto", "lun"). null si no hay cambio de dia. */
+        dateLabel: z.string().nullable().optional(),
       })
     )
     .max(80),
+  timeline: z
+    .object({
+      hasTimes: z.boolean(),
+      daySeparators: z.array(z.string()).max(20).default([]),
+      spansMultipleDays: z.boolean().nullable().optional(),
+      note: z.string().nullable().optional(),
+    })
+    .nullish(),
 });
 
 export type VisionExtraction = z.infer<typeof visionExtractionSchema>;
@@ -73,12 +84,28 @@ export const visionResponseSchema = {
           timestamp: {
             type: "string",
             nullable: true,
-            description: "Hora visible del mensaje, tal cual aparece. null si no se ve",
+            description: "Hora visible del mensaje, tal cual aparece (ej. '21:14', '9:05 p. m.'). Si la hora solo se ve en el ultimo mensaje de un grupo, repitela en los del grupo. null si no se ve",
+          },
+          dateLabel: {
+            type: "string",
+            nullable: true,
+            description: "Separador de dia que aparece ENCIMA de este mensaje, tal cual ('Hoy', 'Ayer', '12 de agosto', 'lunes', '14/08/25'). Solo en el primer mensaje despues del separador; null en el resto",
           },
         },
         required: ["speaker", "text"],
       },
     },
+    timeline: {
+      type: "object",
+      description: "Lectura temporal de la captura",
+      properties: {
+        hasTimes: { type: "boolean", description: "true si se ven horas en los mensajes" },
+        daySeparators: { type: "array", items: { type: "string" }, description: "Todos los separadores de dia visibles, en orden" },
+        spansMultipleDays: { type: "boolean", nullable: true, description: "true si la captura abarca mas de un dia (por separadores o por horas que saltan). null si no se puede saber" },
+        note: { type: "string", nullable: true, description: "Cualquier ambiguedad temporal: horas que no se ven, salto grande sin separador, etc. null si todo es claro" },
+      },
+      required: ["hasTimes", "daySeparators"],
+    },
   },
-  required: ["readable", "platform", "confidence", "thread"],
+  required: ["readable", "platform", "confidence", "thread", "timeline"],
 } as const;
