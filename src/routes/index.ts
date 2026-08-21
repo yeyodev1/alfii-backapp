@@ -167,6 +167,9 @@ function routerApi(app: Application) {
     analysis.analyzeTextForTarget
   );
   router.get("/targets/:id/timeline", ...authed, analysis.timeline);
+  router.get("/targets/:id/us", ...authed, analysis.usGet);
+  router.post("/targets/:id/us", ...authed, analysisLimiter, analysis.usRead);
+  router.post("/targets/:id/photo", ...authed, analysisLimiter, uploadScreenshot, analysis.photoRead);
   router.post("/targets/:id/trajectory", ...authed, analysisLimiter, analysis.trajectory);
   router.post(
     "/targets/:id/transcribe",

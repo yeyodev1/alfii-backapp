@@ -27,6 +27,7 @@ import { CustomError } from "../errors/customError.error";
 import { gateScriptsForAnonymous } from "../utils/scriptGating";
 import { transcribeAudio } from "../services/transcription.service";
 import { buildTimeline, readTrajectory } from "../services/trajectory.service";
+import { getUs, readUs, readPhoto, photoReadingToText } from "../services/us.service";
 import { MessageModel } from "../models/message.model";
 
 export const confirmTargetSchema = z.object({
@@ -505,6 +506,82 @@ export async function trajectory(req: AuthRequest, res: Response, next: NextFunc
     const force = String(req.query?.force ?? "") === "1";
     const out = await readTrajectory({ user: req.currentUser!, target, force });
     res.json(out);
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** Ultima lectura "Nosotros" + historial de scores (sin llamar al modelo). */
+export async function usGet(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const target = await requireOwnedTarget(req.currentUser!._id, param(req, "id"));
+    res.json(await getUs(target));
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** Genera (o devuelve la reciente) lectura "Nosotros" con mejoras marcadas. */
+export async function usRead(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const target = await requireOwnedTarget(req.currentUser!._id, param(req, "id"));
+    const force = String(req.query?.force ?? "") === "1";
+    res.json(await readUs({ user: req.currentUser!, target, force }));
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Foto de la salida / de ellos dos: Alfii lee como les fue. La imagen se
+ * guarda como las capturas (Cloudinary si esta activo) y la lectura queda en
+ * el hilo: mensaje 'photo' del usuario (imagen + lectura) y respuesta de Alfii.
+ */
+export async function photoRead(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    if (!req.file) throw new CustomError("Necesito una foto.", 400);
+    const target = await requireOwnedTarget(req.currentUser!._id, param(req, "id"));
+    const note = String(req.body?.note ?? "").trim().slice(0, 400);
+
+    const { reading, processed } = await readPhoto({ user: req.currentUser!, target, buffer: req.file.buffer, note });
+    const text = photoReadingToText(reading);
+
+    const image = await maybeStore({
+      buffer: processed,
+      userId: String(req.currentUser!._id),
+      targetId: String(target._id),
+    });
+
+    if (note) {
+      await MessageModel.create({ userId: req.currentUser!._id, targetId: target._id, role: "user", kind: "text", content: note });
+    }
+    const photoMsg = await MessageModel.create({
+      userId: req.currentUser!._id,
+      targetId: target._id,
+      role: "user",
+      kind: "photo",
+      content: "",
+      image: image ?? undefined,
+    });
+    const alfiiMsg = await MessageModel.create({
+      userId: req.currentUser!._id,
+      targetId: target._id,
+      role: "alfii",
+      kind: "text",
+      content: text,
+    });
+    await TargetModel.findByIdAndUpdate(target._id, {
+      $set: { lastMessageAt: new Date() },
+      $inc: { messageCount: note ? 3 : 2 },
+    });
+
+    res.status(201).json({
+      reading,
+      text,
+      imageUrl: image ? signedScreenshotUrl(image.publicId) : null,
+      photoMessageId: String(photoMsg._id),
+      alfiiMessageId: String(alfiiMsg._id),
+    });
   } catch (error) {
     next(error);
   }

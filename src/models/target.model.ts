@@ -184,6 +184,8 @@ export interface ITarget extends Document {
   herCardHistory: IHerCardSnapshot[];
   /** Lectura de trayectoria cacheada (ver trajectory.service). */
   trajectory?: { reading: unknown; generatedAt: Date; analysisCount: number };
+  /** Historial de lecturas 'Nosotros' (ver us.service). */
+  usReadings?: { reading: unknown; generatedAt: Date; analysisCount: number }[];
 
   createdAt: Date;
   updatedAt: Date;
@@ -374,6 +376,7 @@ const targetSchema = new Schema<ITarget>(
 
     version: { type: Number, default: 0 },
     trajectory: { type: Schema.Types.Mixed },
+    usReadings: { type: [Schema.Types.Mixed], default: [] },
 
     herCard: { type: herCardSnapshotSchema, required: false },
     herCardHistory: { type: [herCardSnapshotSchema], default: [] },
