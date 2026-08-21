@@ -60,6 +60,10 @@ export interface IUser extends Document {
    *  envio. Si el usuario vuelve (lastActiveAt > lastSentAt) la etapa se
    *  reinicia: la proxima ausencia arranca la secuencia desde cero. */
   reengagement: { stage: number; lastSentAt?: Date };
+  /** Que correos acepta. Por defecto todos; la baja es por tipo. */
+  emailPrefs?: { reengagement?: boolean; achievements?: boolean; updatedAt?: Date };
+  /** Quiere aviso cuando Alfii este en WhatsApp. */
+  whatsappWaitlist?: { joined: boolean; at?: Date };
   plan: "free" | "pro";
   /** Acceso pro sin pagar, otorgado por el admin. Su gasto se registra igual. */
   isVip: boolean;
@@ -133,6 +137,15 @@ const userSchema = new Schema<IUser>(
     reengagement: {
       stage: { type: Number, default: 0 },
       lastSentAt: { type: Date },
+    },
+    emailPrefs: {
+      reengagement: { type: Boolean, default: true },
+      achievements: { type: Boolean, default: true },
+      updatedAt: { type: Date },
+    },
+    whatsappWaitlist: {
+      joined: { type: Boolean, default: false },
+      at: { type: Date },
     },
     plan: { type: String, enum: ["free", "pro"], default: "free" },
     isVip: { type: Boolean, default: false },

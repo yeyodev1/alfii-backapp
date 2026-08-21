@@ -44,6 +44,8 @@ export async function runReengagementSweep(): Promise<SweepResult> {
     isAnonymous: false,
     email: { $exists: true, $ne: null },
     lastActiveAt: { $lte: oldestTrigger },
+    // Baja por tipo: quien desactivo los recordatorios no entra ni al conteo.
+    "emailPrefs.reengagement": { $ne: false },
   })
     .select("email preferredName lastActiveAt reengagement")
     .limit(500)
@@ -85,6 +87,7 @@ export async function runReengagementSweep(): Promise<SweepResult> {
     }
 
     const ok = await sendReengagement({
+      userId: String(user._id),
       to: user.email,
       name: user.preferredName,
       stage,

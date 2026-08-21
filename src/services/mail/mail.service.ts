@@ -23,6 +23,17 @@ function getClient(): Resend | null {
   return client;
 }
 
+import { createHmac } from "crypto";
+
+/** Enlace de gestion de correos (baja con un clic, sin login). Misma derivacion
+ *  que emailPrefs.service.unsubscribeToken; se duplica aqui para no importar
+ *  ese modulo desde el de correo (importa appUrl de este). */
+function prefsUrlFor(userId?: string): string | undefined {
+  if (!userId) return undefined;
+  const t = createHmac("sha256", env.JWT_SECRET).update(`unsub:${userId}`).digest("hex").slice(0, 40);
+  return appUrl(`/correos?u=${encodeURIComponent(userId)}&t=${t}`);
+}
+
 export function appUrl(path = ""): string {
   const base = env.APP_URL.replace(/\/+$/, "");
   const clean = path.startsWith("/") ? path : `/${path}`;
@@ -94,7 +105,7 @@ const COLORS = {
  * buena parte del CSS moderno y no soportan flexbox de forma fiable. Las tablas
  * son la unica maquetacion que se ve igual en todos.
  */
-function layout(input: { title: string; body: string; cta?: { label: string; url: string } }) {
+function layout(input: { title: string; body: string; cta?: { label: string; url: string }; prefsUrl?: string }) {
   const button = input.cta
     ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:26px 0;">
          <tr><td style="border-radius:12px;background:${COLORS.red};">
@@ -119,6 +130,8 @@ function layout(input: { title: string; body: string; cta?: { label: string; url
       </table>
       <div style="max-width:520px;margin-top:16px;font-family:Helvetica,Arial,sans-serif;font-size:11px;line-height:1.6;color:rgba(251,240,204,0.4);text-align:center;">
         Este correo es solo sobre tu cuenta. Alfii nunca menciona por correo a las personas que analizas.
+        <br><span style="color:rgba(251,240,204,0.55);">Pronto: Alfii en WhatsApp, con el mismo contexto de tus expedientes.</span>
+        ${input.prefsUrl ? `<br><a href="${input.prefsUrl}" style="color:rgba(251,240,204,0.6);text-decoration:underline;">Gestionar mis correos o darme de baja</a>` : ""}
       </div>
     </td></tr>
   </table>
@@ -166,7 +179,7 @@ export async function sendPasswordChanged(input: { to: string; name?: string }) 
   });
 }
 
-export async function sendProfileCompleted(input: { to: string; name?: string; overall: number; tier: string }) {
+export async function sendProfileCompleted(input: { userId?: string; to: string; name?: string; overall: number; tier: string }) {
   const hola = input.name ? `${input.name}, ` : "";
 
   return send({
@@ -179,12 +192,14 @@ export async function sendProfileCompleted(input: { to: string; name?: string; o
         `calibra contigo: los scripts van a sonar a ti y no a un manual.</p>` +
         `<p>Tu carta quedo en <strong>${input.overall}</strong> (${input.tier}).</p>`,
       cta: { label: "Ver mi carta", url: appUrl("/heroe") },
+          prefsUrl: prefsUrlFor(input.userId),
     }),
     text: `${hola}completaste tu Matriz de Identidad. Tu carta quedo en ${input.overall} (${input.tier}).\n\n${appUrl("/heroe")}`,
   });
 }
 
 export async function sendAchievement(input: {
+  userId?: string;
   to: string;
   name?: string;
   title: string;
@@ -199,6 +214,7 @@ export async function sendAchievement(input: {
       title: input.title,
       body: `<p>${hola}${input.detail}</p>`,
       cta: { label: "Ver mi progreso", url: appUrl("/heroe") },
+          prefsUrl: prefsUrlFor(input.userId),
     }),
     text: `${hola}${input.detail}\n\n${appUrl("/heroe")}`,
   });
@@ -252,7 +268,7 @@ const REENGAGEMENT_STAGES: {
   },
 ];
 
-export async function sendReengagement(input: { to: string; name?: string; stage: number }) {
+export async function sendReengagement(input: { userId?: string; to: string; name?: string; stage: number }) {
   const tpl = REENGAGEMENT_STAGES[Math.min(input.stage, REENGAGEMENT_STAGES.length - 1)];
   const hola = input.name ? `${input.name}, ` : "";
   // Variante pseudo-aleatoria pero estable por destinatario+etapa, para que un
@@ -266,7 +282,8 @@ export async function sendReengagement(input: { to: string; name?: string; stage
       title: tpl.title,
       body: tpl.body(hola),
       cta: { label: "Volver a la partida", url: appUrl("/") },
+          prefsUrl: prefsUrlFor(input.userId),
     }),
-    text: `${tpl.text(hola)}\n\n${appUrl("/")}\n\n¿No quieres estos recordatorios? Responde a este correo y no te mandamos mas.`,
+    text: `${tpl.text(hola)}\n\n${appUrl("/")}\n\n¿No quieres estos recordatorios? Date de baja aqui: ${prefsUrlFor(input.userId) ?? appUrl("/settings")}`,
   });
 }

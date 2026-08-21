@@ -43,12 +43,14 @@ const TIER_LABELS: Record<string, string> = {
  */
 export async function checkAchievements(user: IUser): Promise<void> {
   if (!user.email || user.isAnonymous) return;
+  if (user.emailPrefs?.achievements === false) return;
 
   try {
     const card = await getUserCard(user);
 
     if (card.completeness >= 100 && (await claim(user, "profile_complete"))) {
       await sendProfileCompleted({
+        userId: String(user._id),
         to: user.email,
         name: user.preferredName,
         overall: card.overall,
@@ -60,6 +62,7 @@ export async function checkAchievements(user: IUser): Promise<void> {
     // cada +1 de una stat seria spam de nuestra propia app.
     if (card.tier !== "BRONCE" && (await claim(user, `tier_${card.tier}`))) {
       await sendAchievement({
+        userId: String(user._id),
         to: user.email,
         name: user.preferredName,
         title: TIER_LABELS[card.tier] ?? `Nueva categoria: ${card.tier}`,

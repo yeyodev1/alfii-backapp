@@ -58,6 +58,11 @@ function routerApi(app: Application) {
     auth.changePasswordHandler
   );
   router.get("/auth/me", ...authed, auth.me);
+  router.patch("/me/email-prefs", ...authed, validateBody(auth.emailPrefsSchema), auth.patchEmailPrefs);
+  router.patch("/me/whatsapp-waitlist", ...authed, validateBody(auth.whatsappWaitlistSchema), auth.setWhatsappWaitlist);
+  // Baja con un clic desde el correo: sin sesion, con token HMAC del enlace.
+  router.get("/email/prefs", auth.emailPrefsByToken);
+  router.post("/email/prefs", authLimiter, validateBody(auth.emailPrefsTokenSchema), auth.setEmailPrefsByToken);
 
   // --- onboarding (La Auditoria) ---
   router.get("/onboarding/opener", ...authed, onboarding.opener);

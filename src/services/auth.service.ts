@@ -222,5 +222,10 @@ export function publicUser(user: IUser) {
     isVip: user.isVip === true,
     analysisCount: user.analysisCount,
     legalUpToDate: latest?.version === legal.version,
+    emailPrefs: {
+      reengagement: user.emailPrefs?.reengagement !== false,
+      achievements: user.emailPrefs?.achievements !== false,
+    },
+    whatsappWaitlist: user.whatsappWaitlist?.joined === true,
   };
 }
