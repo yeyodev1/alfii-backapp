@@ -193,7 +193,6 @@ const herCardSnapshotSchema = new Schema(
   {
     data: { type: Schema.Types.Mixed, required: true },
     version: { type: Number, required: true },
-    trajectory: { type: Schema.Types.Mixed },
     generatedAt: { type: Date, default: Date.now },
     model: String,
     analysisCount: { type: Number, default: 0 },
@@ -374,6 +373,7 @@ const targetSchema = new Schema<ITarget>(
     isArchived: { type: Boolean, default: false },
 
     version: { type: Number, default: 0 },
+    trajectory: { type: Schema.Types.Mixed },
 
     herCard: { type: herCardSnapshotSchema, required: false },
     herCardHistory: { type: [herCardSnapshotSchema], default: [] },
