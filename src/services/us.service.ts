@@ -1,3 +1,4 @@
+import { nowLine } from "../utils/clock";
 import { z } from "zod";
 import sharp from "sharp";
 import { generateStructured } from "./ai/structured";
@@ -239,7 +240,7 @@ export async function readPhoto(input: {
     throw new CustomError("No pude leer esa imagen. Prueba con un PNG o JPG.", 400);
   }
 
-  const dossier = `Expediente: ella se llama ${input.target.displayName}. Etapa: ${input.target.stage}.`;
+  const dossier = `${nowLine(input.user.timezone)}\nExpediente: ella se llama ${input.target.displayName}. Etapa: ${input.target.stage}.`;
   const result = await generateStructured({
     task: "vision",
     system: `${PHOTO_SYSTEM}${personaDirective(input.user.alfiiPersona)}`,

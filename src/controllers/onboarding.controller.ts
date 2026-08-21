@@ -1,3 +1,4 @@
+import { isValidTimeZone, resolveTimeZone, nowLine } from "../utils/clock";
 import { Response, NextFunction } from "express";
 import { z } from "zod";
 import type { AuthRequest } from "../types/AuthRequest";
@@ -86,6 +87,23 @@ export async function setPersona(req: AuthRequest, res: Response, next: NextFunc
       persona ? { $set: { alfiiPersona: persona } } : { $unset: { alfiiPersona: 1 } }
     );
     res.json({ ok: true, persona: persona ? PERSONAS[persona].label : null });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export const timezoneSchema = z.object({ timezone: z.string().min(1).max(64).nullable() });
+
+/** Zona horaria del usuario. null vuelve al default (Ecuador). */
+export async function setTimezone(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const tz = req.body.timezone as string | null;
+    if (tz && !isValidTimeZone(tz)) throw new CustomError("Zona horaria invalida.", 400);
+    await UserModel.updateOne(
+      { _id: req.currentUser!._id },
+      tz ? { $set: { timezone: tz } } : { $unset: { timezone: 1 } }
+    );
+    res.json({ timezone: resolveTimeZone(tz), now: nowLine(tz) });
   } catch (error) {
     next(error);
   }

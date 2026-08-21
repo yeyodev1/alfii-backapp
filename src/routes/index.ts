@@ -87,6 +87,7 @@ function routerApi(app: Application) {
     validateBody(onboarding.personaSchema),
     onboarding.setPersona
   );
+  router.patch("/me/timezone", ...authed, validateBody(onboarding.timezoneSchema), onboarding.setTimezone);
   router.get("/profile/completeness", ...authed, onboarding.completeness);
   // La carta de stats. El path es /me/card y no /profile/card porque es el que
   // ya consume el cliente: cambiarlo aqui romperia el frontend sin ganar nada.

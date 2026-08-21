@@ -1,3 +1,4 @@
+import { clockLayer } from "../utils/clock";
 import { z } from "zod";
 import { Types } from "mongoose";
 import { AnalysisModel } from "../models/analysis.model";
@@ -153,6 +154,8 @@ export async function readTrajectory(input: {
   }
 
   const context =
+    clockLayer(input.user.timezone) +
+    "\n\n" +
     buildDossierLayer(target) +
     "\n\n" +
     buildImportedHistoryLayer(target) +

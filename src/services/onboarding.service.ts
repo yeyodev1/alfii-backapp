@@ -1,3 +1,4 @@
+import { clockLayer } from "../utils/clock";
 import { generateStructured } from "./ai/structured";
 import {
   ONBOARDING_SYSTEM,
@@ -549,7 +550,7 @@ export async function onboardingTurn(input: {
 
   const result = await generateStructured({
     task: "chat",
-    system: `${ONBOARDING_SYSTEM}\n\n${stepInstruction(step)}${personaDirective(input.user.alfiiPersona)}`,
+    system: `${ONBOARDING_SYSTEM}\n\n${clockLayer(input.user.timezone)}\n\n${stepInstruction(step)}${personaDirective(input.user.alfiiPersona)}`,
     parts: [
       {
         text:

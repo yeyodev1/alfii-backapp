@@ -39,6 +39,8 @@ export interface IUser extends Document {
    * solo cuando el propio usuario la confirma o corrige en conversacion.
    */
   location?: { country?: string; city?: string; confirmed: boolean };
+  /** Zona horaria IANA del usuario. Vacio = America/Guayaquil. */
+  timezone?: string;
 
   /** Con que voz le habla Alfii (HARVEY, HITCH, BOND, BARNEY, STARK). */
   alfiiPersona?: string;
@@ -112,6 +114,7 @@ const userSchema = new Schema<IUser>(
 
     alfiiPersona: { type: String, trim: true, maxlength: 20 },
 
+    timezone: { type: String, trim: true, maxlength: 64 },
     location: {
       type: new Schema(
         {

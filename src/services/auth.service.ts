@@ -1,3 +1,4 @@
+import { resolveTimeZone } from "../utils/clock";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -227,5 +228,6 @@ export function publicUser(user: IUser) {
       achievements: user.emailPrefs?.achievements !== false,
     },
     whatsappWaitlist: user.whatsappWaitlist?.joined === true,
+    timezone: resolveTimeZone(user.timezone),
   };
 }

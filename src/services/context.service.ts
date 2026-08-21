@@ -1,3 +1,4 @@
+import { clockLayer } from "../utils/clock";
 import {
   ARCHETYPE_LABELS,
   INCOME_RANGE_LABELS,
@@ -52,7 +53,7 @@ export interface AssembledContext {
 // ---------------------------------------------------------------------------
 
 export function buildIdentityLayer(user: IUser, profile: IPowerProfile | null): string {
-  const lines: string[] = ["=== MATRIZ DE IDENTIDAD DEL USUARIO ==="];
+  const lines: string[] = [clockLayer(user.timezone), "", "=== MATRIZ DE IDENTIDAD DEL USUARIO ==="];
   const missing: string[] = [];
 
   lines.push(`Como dirigirte a el: ${user.preferredName || "(no lo ha dicho)"}`);
