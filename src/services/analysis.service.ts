@@ -33,6 +33,8 @@ export interface RunAnalysisInput {
    *  de ser "el ultimo mensaje de una captura" y pasa a leer la dinamica
    *  global: estadisticas + resumen de lo viejo + ventana literal. */
   importBrief?: string | null;
+  /** Pregunta o contexto que el usuario escribio al subir la captura. */
+  userNote?: string | null;
 }
 
 export interface RunAnalysisResult {
@@ -93,7 +95,11 @@ export async function runAnalysis(input: RunAnalysisInput): Promise<RunAnalysisR
       `Analiza el ultimo mensaje de ELLA en el contexto de todo el hilo. ` +
       `Cita fragmentos literales para sostener tu lectura.`;
 
-  const promptParts = [{ text: `${context.text}\n\n${header}` }];
+  const noteBlock = input.userNote?.trim()
+    ? `\n\n=== LO QUE EL USUARIO PREGUNTA O ACLARA SOBRE ESTA CAPTURA ===\n${input.userNote.trim().slice(0, 600)}\n` +
+      `Responde a eso dentro del analisis (en lead y subtext) ademas de la lectura normal.`
+    : "";
+  const promptParts = [{ text: `${context.text}\n\n${header}${noteBlock}` }];
 
   const result = await generateStructured({
     task: "analysis",

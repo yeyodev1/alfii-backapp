@@ -26,6 +26,7 @@ import { MAX_AUTO_LESSONS_PER_SESSION } from "../schemas/enums";
 import { CustomError } from "../errors/customError.error";
 import { gateScriptsForAnonymous } from "../utils/scriptGating";
 import { transcribeAudio } from "../services/transcription.service";
+import { buildTimeline, readTrajectory } from "../services/trajectory.service";
 import { MessageModel } from "../models/message.model";
 
 export const confirmTargetSchema = z.object({
@@ -165,11 +166,26 @@ export async function analyzeForTarget(req: AuthRequest, res: Response, next: Ne
       targetId: String(target._id),
     });
 
+    // Nota opcional del usuario ("mira el tono de la ultima", "que le digo
+    // aqui"): entra al prompt y queda en el hilo ANTES de la captura, como en
+    // una conversacion real.
+    const userNote = String(req.body?.note ?? "").trim().slice(0, 600);
+    if (userNote) {
+      await MessageModel.create({
+        userId: req.currentUser!._id,
+        targetId: target._id,
+        role: "user",
+        kind: "text",
+        content: userNote,
+      });
+    }
+
     const { analysis, payload } = await runAnalysis({
       user: req.currentUser!,
       target,
       extraction,
       image,
+      userNote,
     });
 
     const fresh = await requireOwnedTarget(req.currentUser!._id, param(req, "id"));
@@ -452,6 +468,43 @@ export async function transcribeForTarget(req: AuthRequest, res: Response, next:
       provider: result.provider,
       latencyMs: result.latencyMs,
     });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** Serie de analisis del expediente para el grafo del historial. */
+export async function timeline(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const target = await requireOwnedTarget(req.currentUser!._id, param(req, "id"));
+    const points = await buildTimeline(target);
+    res.json({
+      points,
+      current: target.meters?.current ?? null,
+      metersHistory: (target.meters?.history ?? []).map((m: any) => ({
+        kiss: m.kiss,
+        firstDate: m.firstDate,
+        firstNight: m.firstNight,
+        at: m.at,
+      })),
+      imported: target.importedHistory
+        ? { messageCount: target.importedHistory.messageCount, firstMessageAt: target.importedHistory.firstMessageAt ?? null, lastMessageAt: target.importedHistory.lastMessageAt ?? null }
+        : null,
+      milestones: target.milestones ?? null,
+      createdAt: target.createdAt,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** Lectura global de la trayectoria (cacheada por analysisCount / 24 h). */
+export async function trajectory(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const target = await requireOwnedTarget(req.currentUser!._id, param(req, "id"));
+    const force = String(req.query?.force ?? "") === "1";
+    const out = await readTrajectory({ user: req.currentUser!, target, force });
+    res.json(out);
   } catch (error) {
     next(error);
   }

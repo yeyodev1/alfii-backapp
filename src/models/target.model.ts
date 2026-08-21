@@ -182,6 +182,8 @@ export interface ITarget extends Document {
   /** Versiones anteriores de la ficha (la actual es `herCard`). Sirve para
    *  ver como evoluciona ella con fechas. Tope de 24 entradas. */
   herCardHistory: IHerCardSnapshot[];
+  /** Lectura de trayectoria cacheada (ver trajectory.service). */
+  trajectory?: { reading: unknown; generatedAt: Date; analysisCount: number };
 
   createdAt: Date;
   updatedAt: Date;
@@ -191,6 +193,7 @@ const herCardSnapshotSchema = new Schema(
   {
     data: { type: Schema.Types.Mixed, required: true },
     version: { type: Number, required: true },
+    trajectory: { type: Schema.Types.Mixed },
     generatedAt: { type: Date, default: Date.now },
     model: String,
     analysisCount: { type: Number, default: 0 },
