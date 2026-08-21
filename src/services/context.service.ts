@@ -357,10 +357,16 @@ export async function buildThreadsLayer(targetId: string): Promise<string> {
 
   const blocks = analyses.reverse().map((a, idx) => {
     const when = new Date(a.createdAt).toISOString().slice(0, 16).replace("T", " ");
+    // Con hora y separador de dia: sin esto el modelo asume que los mensajes
+    // son de la hora en que se subio la captura.
     const thread = (a.extractedThread || [])
-      .map((m) => `${m.speaker === "her" ? "ELLA" : "EL"}: ${m.text}`)
+      .map((m: any) => {
+        const day = m.dateLabel ? `[${m.dateLabel}] ` : "";
+        const time = m.timestamp ? `(${m.timestamp}) ` : "";
+        return `${day}${m.speaker === "her" ? "ELLA" : "EL"} ${time}: ${m.text}`.replace(" :", ":");
+      })
       .join("\n");
-    return `--- Captura ${idx + 1} (${when}) ---\n${thread}`;
+    return `--- Captura ${idx + 1} (subida el ${when}; las horas de abajo son las del chat, no de la subida) ---\n${thread}`;
   });
 
   return `=== ULTIMAS CONVERSACIONES REALES CON ELLA ===\n${blocks.join("\n\n")}`;

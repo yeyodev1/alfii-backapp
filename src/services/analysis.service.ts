@@ -136,6 +136,7 @@ export async function runAnalysis(input: RunAnalysisInput): Promise<RunAnalysisR
       speaker: m.speaker,
       text: m.text,
       timestamp: m.timestamp ?? undefined,
+      dateLabel: m.dateLabel ?? undefined,
     })),
     payload: result.data,
     aiModel: result.model,

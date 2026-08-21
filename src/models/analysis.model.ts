@@ -35,7 +35,7 @@ export interface IAnalysis extends Document {
   platform?: string;
   detectedName?: string;
   image?: IAnalysisImage;
-  extractedThread: { speaker: "her" | "him"; text: string; timestamp?: string }[];
+  extractedThread: { speaker: "her" | "him"; text: string; timestamp?: string; dateLabel?: string }[];
 
   /**
    * Resumen del historial importado de WhatsApp cuando el export supero la
@@ -93,6 +93,7 @@ const analysisSchema = new Schema<IAnalysis>(
             speaker: { type: String, enum: ["her", "him"], required: true },
             text: { type: String, required: true },
             timestamp: String,
+            dateLabel: String,
           },
           { _id: false }
         ),
